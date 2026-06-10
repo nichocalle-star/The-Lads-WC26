@@ -8,6 +8,9 @@ import {
   signInWithRedirect,
   getRedirectResult,
   signOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
@@ -20,6 +23,8 @@ interface AuthContextType {
   authError: string | null;
   needsUsername: boolean;
   signInWithGoogle: () => Promise<void>;
+  signUpWithPassword: (username: string, password: string) => Promise<{ error?: string }>;
+  signInWithPassword: (username: string, password: string) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   saveUsername: (username: string) => Promise<{ error?: string }>;
 }
@@ -102,6 +107,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signUpWithPassword = async (username: string, password: string): Promise<{ error?: string }> => {
+    const clean = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(clean)) {
+      return { error: "3–20 chars, letters/numbers/underscores only" };
+    }
+    const taken = await getDocs(query(collection(db, "users"), where("username", "==", clean)));
+    if (!taken.empty) return { error: "Username already taken" };
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, `${clean}@thelads.wc26`, password);
+      await updateProfile(cred.user, { displayName: clean });
+      const newUser: User = {
+        uid: cred.user.uid,
+        email: `${clean}@thelads.wc26`,
+        displayName: clean,
+        username: clean,
+        isAdmin: false,
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(doc(db, "users", cred.user.uid), newUser);
+      setUser(newUser);
+      setNeedsUsername(false);
+      return {};
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Sign-up failed";
+      return { error: message };
+    }
+  };
+
+  const signInWithPassword = async (username: string, password: string): Promise<{ error?: string }> => {
+    const clean = username.trim().toLowerCase();
+    try {
+      await signInWithEmailAndPassword(auth, `${clean}@thelads.wc26`, password);
+      return {};
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential") {
+        return { error: "Wrong username or password" };
+      }
+      return { error: err instanceof Error ? err.message : "Sign-in failed" };
+    }
+  };
+
   const logout = async () => {
     await signOut(auth);
     setUser(null);
@@ -125,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, firebaseUser, loading, authError, needsUsername, signInWithGoogle, logout, saveUsername }}>
+    <AuthContext.Provider value={{ user, firebaseUser, loading, authError, needsUsername, signInWithGoogle, signUpWithPassword, signInWithPassword, logout, saveUsername }}>
       {children}
     </AuthContext.Provider>
   );
