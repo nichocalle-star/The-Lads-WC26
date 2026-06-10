@@ -20,12 +20,13 @@ function GoogleIcon() {
 
 function WallOfShame({ signedUp }: { signedUp: string[] }) {
   const [time, setTime] = useState({ h: "00", m: "00" });
-  const locked = Date.now() >= KICKOFF.getTime();
+  const [locked, setLocked] = useState(false);
 
   useEffect(() => {
     function tick() {
       const diff = KICKOFF.getTime() - Date.now();
-      if (diff <= 0) { setTime({ h: "00", m: "00" }); return; }
+      if (diff <= 0) { setLocked(true); setTime({ h: "00", m: "00" }); return; }
+      setLocked(false);
       setTime({
         h: String(Math.floor(diff / 3600000)).padStart(2, "0"),
         m: String(Math.floor((diff % 3600000) / 60000)).padStart(2, "0"),
