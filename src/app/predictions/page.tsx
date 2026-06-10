@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, setDoc, getDocs, query, where } from "firebase/firestore";
 import { Match, Prediction } from "@/lib/types";
 import { useRouter } from "next/navigation";
 
@@ -216,32 +216,38 @@ export default function PredictionsPage() {
   }, [user]);
 
   async function submitPrediction(matchId: string, winner: string, homeScore: number | null, awayScore: number | null) {
-    if (!firebaseUser) return;
+    if (!user) return;
+    // Client-side kickoff lock check
+    const match = matches.find((m) => m.matchId === matchId);
+    if (match && new Date() >= new Date(match.kickoffTimeUTC)) {
+      setPageError("This match has already kicked off – prediction locked.");
+      return;
+    }
     setSubmitting(matchId);
     try {
-      const token = await firebaseUser.getIdToken();
-      const res = await fetch("/api/submit-prediction", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ matchId, predictedWinner: winner, predictedHomeScore: homeScore, predictedAwayScore: awayScore }),
-      });
-      let data: { error?: string; ok?: boolean } = {};
-      try { data = await res.json(); } catch { data = {}; }
-      if (!res.ok) { setPageError(data.error ?? `Server error (${res.status}) – please try again`); }
-      else {
-        setPageError(null);
-        setPredictions((prev) => ({
-          ...prev,
-          [matchId]: {
-            userId: user!.uid, matchId, predictedWinner: winner,
-            predictedHomeScore: homeScore, predictedAwayScore: awayScore,
-            submittedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-            pointsAwarded: 0, isLocked: false,
-          },
-        }));
-      }
-    } catch { setPageError("Network error – please try again"); }
-    finally { setSubmitting(null); }
+      const predictionId = `${user.uid}_${matchId}`;
+      const now = new Date().toISOString();
+      const existing = predictions[matchId];
+      const prediction: Prediction = {
+        userId: user.uid,
+        matchId,
+        predictedWinner: winner,
+        predictedHomeScore: homeScore,
+        predictedAwayScore: awayScore,
+        submittedAt: existing?.submittedAt ?? now,
+        updatedAt: now,
+        pointsAwarded: 0,
+        isLocked: false,
+      };
+      await setDoc(doc(db, "predictions", predictionId), prediction);
+      setPageError(null);
+      setPredictions((prev) => ({ ...prev, [matchId]: prediction }));
+    } catch (e) {
+      setPageError("Failed to save – please try again");
+      console.error(e);
+    } finally {
+      setSubmitting(null);
+    }
   }
 
   if (loading || loadingData) {
