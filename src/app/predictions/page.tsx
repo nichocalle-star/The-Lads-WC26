@@ -225,8 +225,9 @@ export default function PredictionsPage() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ matchId, predictedWinner: winner, predictedHomeScore: homeScore, predictedAwayScore: awayScore }),
       });
-      const data = await res.json();
-      if (!res.ok) { setPageError(data.error ?? "Failed to submit"); }
+      let data: { error?: string; ok?: boolean } = {};
+      try { data = await res.json(); } catch { data = {}; }
+      if (!res.ok) { setPageError(data.error ?? `Server error (${res.status}) – please try again`); }
       else {
         setPageError(null);
         setPredictions((prev) => ({

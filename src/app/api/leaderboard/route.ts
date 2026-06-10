@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
 function getAdminDb() {
   if (!getApps().length) {
     initializeApp({
