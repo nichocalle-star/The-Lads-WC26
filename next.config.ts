@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { hostname: "lh3.googleusercontent.com" }, // Google profile photos
-      { hostname: "api.sofascore.app" },           // Team logos
+      { hostname: "a.espncdn.com" },                 // ESPN team logos
     ],
   },
 };

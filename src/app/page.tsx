@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 
 export default function Home() {
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, authError, signInWithGoogle } = useAuth();
 
   if (loading) {
     return (
@@ -19,9 +19,15 @@ export default function Home() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center gap-8">
         <div>
           <h1 className="text-5xl font-bold mb-3">⚽ The Lads</h1>
-          <p className="text-2xl text-green-400 font-semibold">FIFA Club World Cup 2026</p>
+          <p className="text-2xl text-green-400 font-semibold">FIFA World Cup 2026</p>
           <p className="text-gray-400 mt-3 text-lg">Predict. Compete. Brag.</p>
         </div>
+        {authError && (
+          <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm max-w-sm">
+            {authError}
+          </div>
+        )}
+
         <button
           onClick={signInWithGoogle}
           className="flex items-center gap-3 bg-white text-gray-900 px-6 py-3 rounded-xl text-base font-semibold hover:bg-gray-100 transition-colors shadow-lg"
@@ -43,7 +49,7 @@ export default function Home() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold">Welcome back, {user.displayName.split(" ")[0]} 👋</h1>
-        <p className="text-gray-400 mt-1">FIFA Club World Cup 2026 starts June 14th</p>
+        <p className="text-gray-400 mt-1">FIFA World Cup 2026 – Tournament starts June 11!</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -63,6 +69,12 @@ export default function Home() {
           <div className="text-3xl mb-3">🏆</div>
           <h2 className="text-lg font-semibold group-hover:text-green-400 transition-colors">Leaderboard</h2>
           <p className="text-gray-400 text-sm mt-1">See who&apos;s winning the group</p>
+        </Link>
+
+        <Link href="/rules" className="bg-gray-900 border border-gray-800 rounded-xl p-6 hover:border-green-500 transition-colors group col-span-1 sm:col-span-3 md:col-span-1">
+          <div className="text-3xl mb-3">📋</div>
+          <h2 className="text-lg font-semibold group-hover:text-green-400 transition-colors">Rules & Scoring</h2>
+          <p className="text-gray-400 text-sm mt-1">How points are awarded</p>
         </Link>
       </div>
     </div>

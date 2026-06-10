@@ -1,8 +1,15 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { User as FirebaseUser, onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import {
+  User as FirebaseUser,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signOut,
+} from "firebase/auth";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { auth, db, googleProvider } from "./firebase";
 import { User } from "./types";
 
@@ -10,55 +17,115 @@ interface AuthContextType {
   user: User | null;
   firebaseUser: FirebaseUser | null;
   loading: boolean;
+  authError: string | null;
+  needsUsername: boolean;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  saveUsername: (username: string) => Promise<{ error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+async function upsertUser(fbUser: FirebaseUser): Promise<User> {
+  const userRef = doc(db, "users", fbUser.uid);
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    return userSnap.data() as User;
+  }
+  const newUser: User = {
+    uid: fbUser.uid,
+    email: fbUser.email ?? "",
+    displayName: fbUser.displayName ?? "Player",
+    photoURL: fbUser.photoURL ?? undefined,
+    isAdmin: false,
+    createdAt: new Date().toISOString(),
+  };
+  await setDoc(userRef, newUser);
+  return newUser;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [needsUsername, setNeedsUsername] = useState(false);
 
   useEffect(() => {
+    // Handle redirect result on page load
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result?.user) {
+          const u = await upsertUser(result.user);
+          setUser(u);
+        }
+      })
+      .catch((err) => {
+        console.error("Redirect sign-in error:", err);
+        setAuthError(err.message);
+      });
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
       if (fbUser) {
-        const userRef = doc(db, "users", fbUser.uid);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-          setUser(userSnap.data() as User);
-        } else {
-          const newUser: User = {
-            uid: fbUser.uid,
-            email: fbUser.email ?? "",
-            displayName: fbUser.displayName ?? "Player",
-            photoURL: fbUser.photoURL ?? undefined,
-            isAdmin: false,
-            createdAt: new Date().toISOString(),
-          };
-          await setDoc(userRef, newUser);
-          setUser(newUser);
+        try {
+          const u = await upsertUser(fbUser);
+          setUser(u);
+          setNeedsUsername(!u.username);
+        } catch (err) {
+          console.error("Firestore user error:", err);
         }
       } else {
         setUser(null);
+        setNeedsUsername(false);
       }
       setLoading(false);
     });
+
     return unsubscribe;
   }, []);
 
   const signInWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    setAuthError(null);
+    try {
+      // Try popup first; fall back to redirect if blocked
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === "auth/popup-blocked" || code === "auth/popup-closed-by-user") {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        const message = err instanceof Error ? err.message : "Sign-in failed";
+        setAuthError(message);
+        console.error("Sign-in error:", err);
+      }
+    }
   };
 
   const logout = async () => {
     await signOut(auth);
+    setUser(null);
+    setNeedsUsername(false);
+  };
+
+  const saveUsername = async (username: string): Promise<{ error?: string }> => {
+    if (!user) return { error: "Not signed in" };
+    const clean = username.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,20}$/.test(clean)) {
+      return { error: "3–20 chars, letters/numbers/underscores only" };
+    }
+    // Check uniqueness
+    const taken = await getDocs(query(collection(db, "users"), where("username", "==", clean)));
+    if (!taken.empty) return { error: "Username already taken" };
+    const updated = { ...user, username: clean };
+    await setDoc(doc(db, "users", user.uid), updated);
+    setUser(updated);
+    setNeedsUsername(false);
+    return {};
   };
 
   return (
-    <AuthContext.Provider value={{ user, firebaseUser, loading, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, firebaseUser, loading, authError, needsUsername, signInWithGoogle, logout, saveUsername }}>
       {children}
     </AuthContext.Provider>
   );

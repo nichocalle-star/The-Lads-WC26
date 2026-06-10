@@ -12,7 +12,7 @@ export default function Navbar() {
       <div className="max-w-6xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-6">
           <Link href="/" className="text-lg font-bold text-white hover:text-green-400 transition-colors">
-            ⚽ The Lads – CWC 26
+            ⚽ The Lads – WC 26
           </Link>
           {user && (
             <>
@@ -24,6 +24,9 @@ export default function Navbar() {
               </Link>
               <Link href="/leaderboard" className="text-sm text-gray-300 hover:text-white transition-colors">
                 Leaderboard
+              </Link>
+              <Link href="/rules" className="text-sm text-gray-300 hover:text-white transition-colors">
+                Rules
               </Link>
               {user.isAdmin && (
                 <Link href="/admin" className="text-sm text-yellow-400 hover:text-yellow-300 transition-colors">
