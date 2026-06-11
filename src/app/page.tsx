@@ -112,11 +112,16 @@ function SignInPanel() {
       return;
     }
     setLoading(true);
-    const result = tab === "create"
-      ? await signUpWithPassword(username, password)
-      : await signInWithPassword(username, password);
-    if (result.error) setError(result.error);
-    setLoading(false);
+    try {
+      const result = tab === "create"
+        ? await signUpWithPassword(username, password)
+        : await signInWithPassword(username, password);
+      if (result.error) setError(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

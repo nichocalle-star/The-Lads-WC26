@@ -112,8 +112,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!/^[a-z0-9_]{3,20}$/.test(clean)) {
       return { error: "3–20 chars, letters/numbers/underscores only" };
     }
-    const taken = await getDocs(query(collection(db, "users"), where("username", "==", clean)));
-    if (!taken.empty) return { error: "Username already taken" };
+    try {
+      // Check uniqueness before creating auth user. May throw permission-denied
+      // if Firestore rules require auth — in that case we skip and let auth handle it.
+      const taken = await getDocs(query(collection(db, "users"), where("username", "==", clean)));
+      if (!taken.empty) return { error: "Username already taken" };
+    } catch {
+      // Firestore rules may block unauthenticated reads — proceed anyway
+    }
     try {
       const cred = await createUserWithEmailAndPassword(auth, `${clean}@thelads.wc26`, password);
       await updateProfile(cred.user, { displayName: clean });
@@ -130,6 +136,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setNeedsUsername(false);
       return {};
     } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      if (code === "auth/email-already-in-use") return { error: "Username already taken" };
       const message = err instanceof Error ? err.message : "Sign-up failed";
       return { error: message };
     }
