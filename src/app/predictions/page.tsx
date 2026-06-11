@@ -373,8 +373,9 @@ function PicksTab({ matches, predictions, pendingEdits, onEdit, groupStandings, 
   groupStandings: Record<string, TeamRow[]>;
   thirdPlaceQualifiers: TeamRow[];
 }) {
-  const upcoming = matches.filter((m) => new Date(m.kickoffTimeUTC) > new Date());
-  if (upcoming.length === 0) return <p className="text-gray-400 text-center py-20">No upcoming matches.</p>;
+  const upcoming = matches.filter((m) => m.status !== "final");
+  const finished = matches.filter((m) => m.status === "final")
+    .sort((a, b) => new Date(b.kickoffTimeUTC).getTime() - new Date(a.kickoffTimeUTC).getTime());
 
   const byDate: Record<string, Match[]> = {};
   for (const m of upcoming) {
@@ -385,22 +386,104 @@ function PicksTab({ matches, predictions, pendingEdits, onEdit, groupStandings, 
 
   return (
     <div className="space-y-8">
-      {Object.entries(byDate).map(([, dayMatches]) => (
-        <div key={dayMatches[0].matchId}>
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
-            {new Date(dayMatches[0].kickoffTimeUTC).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: TZ })}
-          </h2>
+      {finished.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Results</h2>
           <div className="space-y-3">
-            {dayMatches.map((match) => (
-              <PredictionCard key={match.matchId} match={match} existing={predictions[match.matchId]}
-                pending={pendingEdits[match.matchId]}
-                onEdit={(h, a) => onEdit(match.matchId, h, a)}
-                groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers}
-                predictions={predictions} />
+            {finished.map((match) => (
+              <CompletedCard key={match.matchId} match={match} prediction={predictions[match.matchId]} />
             ))}
           </div>
         </div>
-      ))}
+      )}
+
+      {upcoming.length === 0 ? (
+        <p className="text-gray-400 text-center py-20">No upcoming matches.</p>
+      ) : (
+        Object.entries(byDate).map(([, dayMatches]) => (
+          <div key={dayMatches[0].matchId}>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              {new Date(dayMatches[0].kickoffTimeUTC).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: TZ })}
+            </h2>
+            <div className="space-y-3">
+              {dayMatches.map((match) => (
+                <PredictionCard key={match.matchId} match={match} existing={predictions[match.matchId]}
+                  pending={pendingEdits[match.matchId]}
+                  onEdit={(h, a) => onEdit(match.matchId, h, a)}
+                  groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers}
+                  predictions={predictions} />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ── Completed match card ──────────────────────────────────────────────────────
+
+function CompletedCard({ match, prediction }: { match: Match; prediction?: Prediction }) {
+  const homeWon = match.homeScore !== null && match.awayScore !== null && match.homeScore > match.awayScore;
+  const awayWon = match.homeScore !== null && match.awayScore !== null && match.awayScore! > match.homeScore!;
+  const pts = prediction?.pointsAwarded ?? 0;
+  const hasPrediction = !!prediction;
+
+  const isExact =
+    hasPrediction &&
+    prediction!.predictedHomeScore === match.homeScore &&
+    prediction!.predictedAwayScore === match.awayScore;
+  const isCorrect = hasPrediction && prediction!.predictedWinner === match.winner;
+
+  let ptsBadgeClass = "bg-gray-800 text-gray-500";
+  let ptsLabel = "0 pts";
+  if (pts > 0) {
+    if (isExact) {
+      ptsBadgeClass = "bg-green-900/50 text-green-400";
+      ptsLabel = `+${pts} pts`;
+    } else {
+      ptsBadgeClass = "bg-blue-900/40 text-blue-400";
+      ptsLabel = `+${pts} pt`;
+    }
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+      <div className="flex justify-between items-center mb-2 text-xs text-gray-500">
+        <span>{match.group ? `Group ${match.group} · ` : ""}{match.round}</span>
+        <span className="bg-gray-800 text-gray-400 text-[10px] px-2 py-0.5 rounded-full">Final</span>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className={`flex-1 text-center text-sm font-semibold py-1.5 rounded-lg ${homeWon ? "text-white" : "text-gray-500"}`}>
+          <TeamName name={match.homeTeam} />
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`text-xl font-bold w-6 text-center ${homeWon ? "text-white" : "text-gray-500"}`}>{match.homeScore}</span>
+          <span className="text-gray-600">–</span>
+          <span className={`text-xl font-bold w-6 text-center ${awayWon ? "text-white" : "text-gray-500"}`}>{match.awayScore}</span>
+        </div>
+        <div className={`flex-1 text-center text-sm font-semibold py-1.5 rounded-lg ${awayWon ? "text-white" : "text-gray-500"}`}>
+          <TeamName name={match.awayTeam} />
+        </div>
+      </div>
+
+      <div className="border-t border-gray-800 mt-3 pt-2.5 flex items-center justify-between gap-3">
+        {hasPrediction ? (
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className={isCorrect ? "text-green-500" : "text-gray-600"}>
+              {isCorrect ? "✓" : "✗"}
+            </span>
+            <span>Your pick:</span>
+            <span className={`font-medium ${isCorrect ? "text-gray-300" : "text-gray-600"}`}>
+              {prediction!.predictedHomeScore}–{prediction!.predictedAwayScore} {prediction!.predictedWinner === "draw" ? "(Draw)" : prediction!.predictedWinner}
+            </span>
+          </div>
+        ) : (
+          <span className="text-xs text-gray-700 italic">No prediction</span>
+        )}
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${ptsBadgeClass}`}>{ptsLabel}</span>
+      </div>
     </div>
   );
 }
