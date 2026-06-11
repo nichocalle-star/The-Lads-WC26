@@ -19,43 +19,43 @@ function getAdmin() {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.ADMIN_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { username } = await req.json();
-  if (!username) return NextResponse.json({ error: "username required" }, { status: 400 });
-
-  const { db, auth } = getAdmin();
-
-  // Find the user by username
-  const userSnap = await db.collection("users").where("username", "==", username).limit(1).get();
-  if (userSnap.empty) {
-    return NextResponse.json({ error: `No user found with username: ${username}` }, { status: 404 });
-  }
-
-  const userDoc = userSnap.docs[0];
-  const uid = userDoc.id;
-
-  // Delete all their predictions
-  const predsSnap = await db.collection("predictions").where("userId", "==", uid).get();
-  const batch = db.batch();
-  for (const d of predsSnap.docs) batch.delete(d.ref);
-
-  // Delete userMetrics doc
-  batch.delete(db.collection("userMetrics").doc(uid));
-
-  // Delete users doc
-  batch.delete(userDoc.ref);
-  await batch.commit();
-
-  // Delete Firebase Auth account
   try {
-    await auth.deleteUser(uid);
-  } catch {
-    // Auth account may not exist — not fatal
-  }
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${process.env.ADMIN_SECRET}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-  return NextResponse.json({ ok: true, deleted: username, uid, predictionsRemoved: predsSnap.size });
+    const body = await req.json();
+    const username = body?.username;
+    if (!username) return NextResponse.json({ error: "username required" }, { status: 400 });
+
+    const { db, auth } = getAdmin();
+
+    const userSnap = await db.collection("users").where("username", "==", username).limit(1).get();
+    if (userSnap.empty) {
+      return NextResponse.json({ error: `No user found with username: ${username}` }, { status: 404 });
+    }
+
+    const userDoc = userSnap.docs[0];
+    const uid = userDoc.id;
+
+    const predsSnap = await db.collection("predictions").where("userId", "==", uid).get();
+    const batch = db.batch();
+    for (const d of predsSnap.docs) batch.delete(d.ref);
+    batch.delete(db.collection("userMetrics").doc(uid));
+    batch.delete(userDoc.ref);
+    await batch.commit();
+
+    try {
+      await auth.deleteUser(uid);
+    } catch (authErr) {
+      console.warn("Auth delete skipped:", authErr);
+    }
+
+    return NextResponse.json({ ok: true, deleted: username, uid, predictionsRemoved: predsSnap.size });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("delete-user error:", err);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

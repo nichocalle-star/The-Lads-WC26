@@ -123,19 +123,20 @@ export default function AdminPage() {
         headers: { ...authHeader, "Content-Type": "application/json" },
         body: JSON.stringify({ username: deleteUsername }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: Record<string, unknown> = {};
+      try { data = JSON.parse(text); } catch { /* server returned non-JSON */ }
       if (res.ok) {
         setDeleteResult(`✅ Deleted ${data.deleted} (${data.predictionsRemoved} predictions removed)`);
         setDeleteUsername("");
         setDeleteConfirm(false);
-        // Refresh player list
         const r2 = await fetch("/api/admin/users", { headers: authHeader });
         if (r2.ok) setPlayers((await r2.json()).users);
       } else {
-        setDeleteResult(`❌ ${data.error}`);
+        setDeleteResult(`❌ ${(data.error as string) || `Server error ${res.status}`}`);
       }
-    } catch {
-      setDeleteResult("❌ Network error");
+    } catch (e) {
+      setDeleteResult(`❌ ${e instanceof Error ? e.message : "Network error"}`);
     } finally {
       setDeleting(false);
     }
