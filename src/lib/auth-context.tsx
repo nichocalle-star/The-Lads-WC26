@@ -41,7 +41,7 @@ async function upsertUser(fbUser: FirebaseUser): Promise<User> {
     uid: fbUser.uid,
     email: fbUser.email ?? "",
     displayName: fbUser.displayName ?? "Player",
-    photoURL: fbUser.photoURL ?? undefined,
+    ...(fbUser.photoURL ? { photoURL: fbUser.photoURL } : {}),
     isAdmin: false,
     createdAt: new Date().toISOString(),
   };
