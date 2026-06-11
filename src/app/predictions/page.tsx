@@ -354,7 +354,7 @@ export default function PredictionsPage() {
       const now = new Date().toISOString();
       const writes = Object.entries(pendingEdits).map(async ([matchId, edit]) => {
         const match = matches.find((m) => m.matchId === matchId);
-        if (match && new Date() >= new Date(match.kickoffTimeUTC)) return;
+        if (match && new Date() >= new Date(match.lockTimeUTC ?? match.kickoffTimeUTC)) return;
         const hs = parseInt(edit.homeScore);
         const as_ = parseInt(edit.awayScore);
         if (isNaN(hs) || isNaN(as_)) return;
@@ -618,7 +618,7 @@ function PredictionCard({ match, existing, pending, onEdit, groupStandings, thir
   thirdPlaceQualifiers: TeamRow[];
   predictions: Record<string, Prediction>;
 }) {
-  const isLocked = new Date() >= new Date(match.kickoffTimeUTC);
+  const isLocked = new Date() >= new Date(match.lockTimeUTC ?? match.kickoffTimeUTC);
 
   const homeScore = pending?.homeScore ?? existing?.predictedHomeScore?.toString() ?? "";
   const awayScore = pending?.awayScore ?? existing?.predictedAwayScore?.toString() ?? "";

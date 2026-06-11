@@ -40,6 +40,14 @@ export default function AdminPage() {
   const [scoreResult, setScoreResult] = useState<string | null>(null);
   const [players, setPlayers] = useState<PlayerRow[] | null>(null);
   const [playersLoading, setPlayersLoading] = useState(false);
+  const [lockTeam, setLockTeam] = useState("Mexico");
+  const [lockTimeInput, setLockTimeInput] = useState("");
+  const [lockResult, setLockResult] = useState<string | null>(null);
+  const [lockSaving, setLockSaving] = useState(false);
+  const [deleteUsername, setDeleteUsername] = useState("");
+  const [deleteResult, setDeleteResult] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
@@ -76,6 +84,60 @@ export default function AdminPage() {
       setSyncResult("❌ Network error");
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function setLockTime() {
+    if (!lockTeam || !lockTimeInput) return;
+    setLockSaving(true);
+    setLockResult(null);
+    try {
+      // lockTimeInput is "YYYY-MM-DDTHH:mm" in ET (EDT = UTC-4)
+      const lockTimeUTC = new Date(lockTimeInput + ":00-04:00").toISOString();
+      const res = await fetch("/api/admin/set-lock-time", {
+        method: "POST",
+        headers: { ...authHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({ teamName: lockTeam, lockTimeUTC }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const matchList = data.matches.map((m: { home: string; away: string }) => `${m.home} vs ${m.away}`).join(", ");
+        setLockResult(`✅ Locked ${data.updated} match(es) at ${new Date(data.lockTimeUTC).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET — ${matchList}`);
+      } else {
+        setLockResult(`❌ ${data.error}`);
+      }
+    } catch {
+      setLockResult("❌ Network error");
+    } finally {
+      setLockSaving(false);
+    }
+  }
+
+  async function deleteUser() {
+    if (!deleteUsername) return;
+    setDeleting(true);
+    setDeleteResult(null);
+    try {
+      const res = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: { ...authHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({ username: deleteUsername }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDeleteResult(`✅ Deleted ${data.deleted} (${data.predictionsRemoved} predictions removed)`);
+        setDeleteUsername("");
+        setDeleteConfirm(false);
+        // Refresh player list
+        const r2 = await fetch("/api/admin/users", { headers: authHeader });
+        if (r2.ok) setPlayers((await r2.json()).users);
+      } else {
+        setDeleteResult(`❌ ${data.error}`);
+      }
+    } catch {
+      setDeleteResult("❌ Network error");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -196,6 +258,42 @@ export default function AdminPage() {
         </div>
         {syncResult && <p className="text-sm">{syncResult}</p>}
         {scoreResult && <p className="text-sm">{scoreResult}</p>}
+      </div>
+
+      {/* Delete user */}
+      <div className="bg-gray-900 border border-red-900/40 rounded-xl p-6 space-y-4">
+        <h2 className="text-lg font-semibold text-red-400">Remove Player</h2>
+        <p className="text-gray-400 text-sm">Permanently deletes the account, all predictions, and metrics.</p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Username (exact)"
+            value={deleteUsername}
+            onChange={(e) => { setDeleteUsername(e.target.value); setDeleteConfirm(false); setDeleteResult(null); }}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-600"
+          />
+          {!deleteConfirm ? (
+            <button
+              onClick={() => setDeleteConfirm(true)}
+              disabled={!deleteUsername}
+              className="bg-red-900 hover:bg-red-800 disabled:bg-gray-700 disabled:text-gray-500 text-red-200 font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              Delete
+            </button>
+          ) : (
+            <button
+              onClick={deleteUser}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-500 disabled:bg-gray-700 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              {deleting ? "Deleting…" : "Confirm"}
+            </button>
+          )}
+        </div>
+        {deleteConfirm && !deleting && (
+          <p className="text-xs text-red-400">This is permanent. Click Confirm to delete <strong>{deleteUsername}</strong>.</p>
+        )}
+        {deleteResult && <p className="text-sm">{deleteResult}</p>}
       </div>
 
       <div className="bg-gray-900 border border-yellow-700/50 rounded-xl p-6">

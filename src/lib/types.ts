@@ -8,6 +8,7 @@ export interface Match {
   group?: string;
   venue: string;
   kickoffTimeUTC: string; // ISO string
+  lockTimeUTC?: string;   // prediction deadline — defaults to kickoffTimeUTC when absent
   status: "upcoming" | "live" | "final";
   homeScore: number | null;
   awayScore: number | null;

@@ -45,10 +45,10 @@ export async function POST(req: NextRequest) {
     }
 
     const match = matchSnap.data()!;
-    const kickoffTime = new Date(match.kickoffTimeUTC);
+    const lockTime = new Date(match.lockTimeUTC ?? match.kickoffTimeUTC);
     const now = new Date(); // server time — cannot be spoofed by user
 
-    if (now >= kickoffTime) {
+    if (now >= lockTime) {
       return NextResponse.json(
         { error: "Predictions for this match are now locked." },
         { status: 403 }
