@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useEffect, useRef, useState } from "react";
 
 const KICKOFF = new Date("2026-06-11T19:00:00Z");
-const SHAME_NAMES = ["Daniel Munzer", "Lucas Almeida", "Juan Pin", "Andres Siboni"];
+const SHAME_NAMES = ["Daniel Munzer", "Lucas Almeida", "Andres Siboni"];
 
 function GoogleIcon() {
   return (
