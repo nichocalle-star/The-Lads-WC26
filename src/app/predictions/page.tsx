@@ -182,15 +182,19 @@ function resolveMatchLoser(
 
 type Tab = "picks" | "standings" | "bracket";
 
+type PendingEdit = { homeScore: string; awayScore: string };
+
 export default function PredictionsPage() {
-  const { user, firebaseUser, loading } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Record<string, Prediction>>({});
   const [loadingData, setLoadingData] = useState(true);
-  const [submitting, setSubmitting] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("picks");
+  const [pendingEdits, setPendingEdits] = useState<Record<string, PendingEdit>>({});
 
   useEffect(() => { if (!loading && !user) router.push("/"); }, [user, loading, router]);
 
@@ -215,38 +219,65 @@ export default function PredictionsPage() {
     load();
   }, [user]);
 
-  async function submitPrediction(matchId: string, winner: string, homeScore: number | null, awayScore: number | null) {
-    if (!user) return;
-    // Client-side kickoff lock check
-    const match = matches.find((m) => m.matchId === matchId);
-    if (match && new Date() >= new Date(match.kickoffTimeUTC)) {
-      setPageError("This match has already kicked off – prediction locked.");
-      return;
-    }
-    setSubmitting(matchId);
+  function handleEdit(matchId: string, homeScore: string, awayScore: string) {
+    setPendingEdits((prev) => {
+      if (homeScore === "" && awayScore === "") {
+        const next = { ...prev };
+        delete next[matchId];
+        return next;
+      }
+      return { ...prev, [matchId]: { homeScore, awayScore } };
+    });
+  }
+
+  async function saveAllPredictions() {
+    if (!user || saving) return;
+    setSaving(true);
+    setPageError(null);
     try {
-      const predictionId = `${user.uid}_${matchId}`;
       const now = new Date().toISOString();
-      const existing = predictions[matchId];
-      const prediction: Prediction = {
-        userId: user.uid,
-        matchId,
-        predictedWinner: winner,
-        predictedHomeScore: homeScore,
-        predictedAwayScore: awayScore,
-        submittedAt: existing?.submittedAt ?? now,
-        updatedAt: now,
-        pointsAwarded: 0,
-        isLocked: false,
-      };
-      await setDoc(doc(db, "predictions", predictionId), prediction);
-      setPageError(null);
-      setPredictions((prev) => ({ ...prev, [matchId]: prediction }));
+      const writes = Object.entries(pendingEdits).map(async ([matchId, edit]) => {
+        const match = matches.find((m) => m.matchId === matchId);
+        if (match && new Date() >= new Date(match.kickoffTimeUTC)) return;
+        const hs = parseInt(edit.homeScore);
+        const as_ = parseInt(edit.awayScore);
+        if (isNaN(hs) || isNaN(as_)) return;
+
+        const slots = BRACKET_MAP[matchId];
+        const homeDisplay = slots ? resolveSlot(slots.home, {}, [], predictions) : match?.homeTeam ?? "";
+        const awayDisplay = slots ? resolveSlot(slots.away, {}, [], predictions) : match?.awayTeam ?? "";
+        const winner = hs > as_ ? homeDisplay : as_ > hs ? awayDisplay : "draw";
+
+        const existing = predictions[matchId];
+        const prediction: Prediction = {
+          userId: user.uid,
+          matchId,
+          predictedWinner: winner,
+          predictedHomeScore: hs,
+          predictedAwayScore: as_,
+          submittedAt: existing?.submittedAt ?? now,
+          updatedAt: now,
+          pointsAwarded: 0,
+          isLocked: false,
+        };
+        await setDoc(doc(db, "predictions", `${user.uid}_${matchId}`), prediction);
+        return { matchId, prediction };
+      });
+
+      const results = await Promise.all(writes);
+      const saved: Record<string, Prediction> = {};
+      for (const r of results) {
+        if (r) saved[r.matchId] = r.prediction;
+      }
+      setPredictions((prev) => ({ ...prev, ...saved }));
+      setPendingEdits({});
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (e) {
       setPageError("Failed to save – please try again");
       console.error(e);
     } finally {
-      setSubmitting(null);
+      setSaving(false);
     }
   }
 
@@ -262,6 +293,7 @@ export default function PredictionsPage() {
 
   const predCount = Object.keys(predictions).length;
   const totalUpcoming = matches.filter((m) => new Date(m.kickoffTimeUTC) > new Date()).length;
+  const pendingCount = Object.keys(pendingEdits).length;
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "picks", label: "My Picks" },
@@ -270,7 +302,7 @@ export default function PredictionsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-28">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">My Predictions</h1>
@@ -288,20 +320,56 @@ export default function PredictionsPage() {
 
       {pageError && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">{pageError}</div>}
 
-      {activeTab === "picks" && <PicksTab matches={matches} predictions={predictions} submitting={submitting} onSubmit={submitPrediction} groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers} />}
+      {activeTab === "picks" && <PicksTab matches={matches} predictions={predictions} pendingEdits={pendingEdits} onEdit={handleEdit} groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers} />}
       {activeTab === "standings" && <StandingsTab groups={groups} groupMatches={groupMatches} groupStandings={groupStandings} />}
       {activeTab === "bracket" && <BracketTab groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers} predictions={predictions} />}
+
+      {/* Floating save bar */}
+      <div className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-200 ${pendingCount > 0 || saveSuccess ? "translate-y-0" : "translate-y-full"}`}>
+        <div className="max-w-6xl mx-auto px-4 pb-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl px-5 py-3 flex items-center justify-between gap-4 shadow-xl">
+            {saveSuccess ? (
+              <p className="text-green-400 text-sm font-medium">✓ Predictions saved</p>
+            ) : (
+              <p className="text-gray-300 text-sm">
+                <span className="text-white font-semibold">{pendingCount}</span> unsaved {pendingCount === 1 ? "prediction" : "predictions"}
+              </p>
+            )}
+            <button
+              onClick={saveAllPredictions}
+              disabled={saving || pendingCount === 0}
+              className="bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors shrink-0"
+            >
+              {saving ? "Saving…" : `Save ${pendingCount > 0 ? pendingCount : ""} ${pendingCount === 1 ? "pick" : "picks"}`}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
+// ── Colombia easter egg ───────────────────────────────────────────────────────
+
+function TeamName({ name }: { name: string }) {
+  if (name === "Colombia") {
+    return (
+      <span>
+        Colombia
+        <span style={{ fontSize: "9px", opacity: 0.25, marginLeft: "3px", fontWeight: 400, letterSpacing: 0 }}>best choice</span>
+      </span>
+    );
+  }
+  return <>{name}</>;
+}
+
 // ── Picks Tab ─────────────────────────────────────────────────────────────────
 
-function PicksTab({ matches, predictions, submitting, onSubmit, groupStandings, thirdPlaceQualifiers }: {
+function PicksTab({ matches, predictions, pendingEdits, onEdit, groupStandings, thirdPlaceQualifiers }: {
   matches: Match[];
   predictions: Record<string, Prediction>;
-  submitting: string | null;
-  onSubmit: (matchId: string, winner: string, home: number | null, away: number | null) => void;
+  pendingEdits: Record<string, PendingEdit>;
+  onEdit: (matchId: string, homeScore: string, awayScore: string) => void;
   groupStandings: Record<string, TeamRow[]>;
   thirdPlaceQualifiers: TeamRow[];
 }) {
@@ -325,8 +393,8 @@ function PicksTab({ matches, predictions, submitting, onSubmit, groupStandings, 
           <div className="space-y-3">
             {dayMatches.map((match) => (
               <PredictionCard key={match.matchId} match={match} existing={predictions[match.matchId]}
-                submitting={submitting === match.matchId}
-                onSubmit={(w, h, a) => onSubmit(match.matchId, w, h, a)}
+                pending={pendingEdits[match.matchId]}
+                onEdit={(h, a) => onEdit(match.matchId, h, a)}
                 groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers}
                 predictions={predictions} />
             ))}
@@ -337,16 +405,23 @@ function PicksTab({ matches, predictions, submitting, onSubmit, groupStandings, 
   );
 }
 
-function PredictionCard({ match, existing, submitting, onSubmit, groupStandings, thirdPlaceQualifiers, predictions }: {
-  match: Match; existing?: Prediction; submitting: boolean;
-  onSubmit: (winner: string, home: number | null, away: number | null) => void;
+function formatML(ml: number | null): string {
+  if (ml === null) return "–";
+  return ml > 0 ? `+${ml}` : `${ml}`;
+}
+
+function PredictionCard({ match, existing, pending, onEdit, groupStandings, thirdPlaceQualifiers, predictions }: {
+  match: Match; existing?: Prediction; pending?: PendingEdit;
+  onEdit: (homeScore: string, awayScore: string) => void;
   groupStandings: Record<string, TeamRow[]>;
   thirdPlaceQualifiers: TeamRow[];
   predictions: Record<string, Prediction>;
 }) {
   const isLocked = new Date() >= new Date(match.kickoffTimeUTC);
-  const [homeScore, setHomeScore] = useState(existing?.predictedHomeScore?.toString() ?? "");
-  const [awayScore, setAwayScore] = useState(existing?.predictedAwayScore?.toString() ?? "");
+
+  const homeScore = pending?.homeScore ?? existing?.predictedHomeScore?.toString() ?? "";
+  const awayScore = pending?.awayScore ?? existing?.predictedAwayScore?.toString() ?? "";
+  const isDirty = !!pending;
 
   // Resolve placeholder names for any knockout match in the bracket
   const slots = BRACKET_MAP[match.matchId];
@@ -361,16 +436,18 @@ function PredictionCard({ match, existing, submitting, onSubmit, groupStandings,
   const as_ = awayScore !== "" ? parseInt(awayScore) : null;
   const bothEntered = hs !== null && as_ !== null && !isNaN(hs) && !isNaN(as_);
 
-  let winner = "";
   let homeActive = false, awayActive = false, drawActive = false;
   if (bothEntered) {
-    if (hs > as_) { winner = homeDisplay; homeActive = true; }
-    else if (as_ > hs) { winner = awayDisplay; awayActive = true; }
-    else { winner = "draw"; drawActive = true; }
+    if (hs > as_) homeActive = true;
+    else if (as_ > hs) awayActive = true;
+    else drawActive = true;
   }
 
+  const odds = match.odds;
+  const showOdds = !!odds && (odds.homeML !== null || odds.drawML !== null || odds.awayML !== null);
+
   return (
-    <div className={`bg-gray-900 border rounded-xl p-4 ${isLocked ? "border-gray-700 opacity-60" : "border-gray-800"}`}>
+    <div className={`bg-gray-900 border rounded-xl p-4 transition-colors ${isLocked ? "border-gray-700 opacity-60" : isDirty ? "border-green-700/60" : "border-gray-800"}`}>
       <div className="flex justify-between mb-2 text-xs text-gray-500">
         <span>{match.group ? `Group ${match.group} · ` : ""}{match.round}</span>
         <span>{formatKickoff(match.kickoffTimeUTC)}</span>
@@ -378,43 +455,65 @@ function PredictionCard({ match, existing, submitting, onSubmit, groupStandings,
 
       <div className="flex items-center gap-3 my-3">
         <div className={`flex-1 text-center py-2 rounded-lg font-semibold text-sm transition-colors ${homeActive ? "bg-green-600 text-white" : drawActive || awayActive ? "bg-gray-800 text-gray-500" : "bg-gray-800 text-gray-300"}`}>
-          {homeDisplay}
+          <TeamName name={homeDisplay} />
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
           <input type="number" min={0} max={20} disabled={isLocked} value={homeScore}
-            onChange={(e) => setHomeScore(e.target.value)}
+            onChange={(e) => onEdit(e.target.value, awayScore)}
             className="w-10 text-center bg-gray-800 border border-gray-700 rounded py-1 text-sm disabled:opacity-40 focus:border-green-500 focus:outline-none" placeholder="0" />
           <span className={`text-sm font-bold px-0.5 ${drawActive ? "text-yellow-400" : "text-gray-600"}`}>–</span>
           <input type="number" min={0} max={20} disabled={isLocked} value={awayScore}
-            onChange={(e) => setAwayScore(e.target.value)}
+            onChange={(e) => onEdit(homeScore, e.target.value)}
             className="w-10 text-center bg-gray-800 border border-gray-700 rounded py-1 text-sm disabled:opacity-40 focus:border-green-500 focus:outline-none" placeholder="0" />
         </div>
 
         <div className={`flex-1 text-center py-2 rounded-lg font-semibold text-sm transition-colors ${awayActive ? "bg-green-600 text-white" : drawActive || homeActive ? "bg-gray-800 text-gray-500" : "bg-gray-800 text-gray-300"}`}>
-          {awayDisplay}
+          <TeamName name={awayDisplay} />
         </div>
       </div>
 
       {drawActive && !isLocked && <p className="text-center text-xs text-yellow-400 -mt-1 mb-2">Draw</p>}
 
-      {isLocked ? (
-        <p className="text-center text-xs text-red-400">🔒 Predictions locked</p>
-      ) : (
-        <>
-          {!bothEntered && <p className="text-center text-xs text-gray-600 mb-1">Enter both scores to submit</p>}
-          <button disabled={!bothEntered || submitting} onClick={() => onSubmit(winner, hs, as_)}
-            className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-2 rounded-lg text-sm transition-colors">
-            {submitting ? "Saving..." : existing ? "Update Prediction" : "Submit Prediction"}
-          </button>
-        </>
+      {showOdds && (
+        <div className="flex items-center border-t border-gray-800 pt-2.5 mt-1 gap-0">
+          {[
+            { label: homeDisplay.length > 10 ? homeDisplay.split(" ")[0] : homeDisplay, val: formatML(odds!.homeML) },
+            { label: "Draw", val: formatML(odds!.drawML) },
+            { label: awayDisplay.length > 10 ? awayDisplay.split(" ")[0] : awayDisplay, val: formatML(odds!.awayML) },
+          ].map((o, i, arr) => (
+            <div key={o.label} className={`flex-1 text-center ${i < arr.length - 1 ? "border-r border-gray-800" : ""}`}>
+              <p className="text-[10px] text-gray-600 mb-0.5 truncate px-1">{o.label}</p>
+              <p className={`text-xs font-medium ${o.val.startsWith("-") ? "text-green-500" : "text-gray-400"}`}>{o.val}</p>
+            </div>
+          ))}
+          {odds!.overUnder !== null && (
+            <div className="text-center pl-3 border-l border-gray-800 shrink-0">
+              <p className="text-[10px] text-gray-600 mb-0.5">O/U</p>
+              <p className="text-xs font-medium text-gray-400">{odds!.overUnder}</p>
+            </div>
+          )}
+          <p className="text-[9px] text-gray-700 pl-2 shrink-0">DK</p>
+        </div>
       )}
 
-      {existing && !isLocked && (
-        <p className="text-center text-xs text-gray-500 mt-1">
-          Saved: <span className="text-green-400">{existing.predictedWinner}</span>
-          {existing.predictedHomeScore !== null ? ` · ${existing.predictedHomeScore}–${existing.predictedAwayScore}` : ""}
-        </p>
+      {isLocked ? (
+        <p className="text-center text-xs text-red-400 mt-2">🔒 Predictions locked</p>
+      ) : (
+        <>
+          {existing && !isDirty && (
+            <p className="text-center text-xs text-gray-600 mt-2">
+              Saved: <span className="text-green-500">{existing.predictedWinner}</span>
+              {existing.predictedHomeScore !== null ? ` · ${existing.predictedHomeScore}–${existing.predictedAwayScore}` : ""}
+            </p>
+          )}
+          {isDirty && (
+            <p className="text-center text-xs text-yellow-600 mt-2">Unsaved — hit Save picks below</p>
+          )}
+          {!bothEntered && !existing && !isDirty && (
+            <p className="text-center text-xs text-gray-700 mt-2">Enter both scores</p>
+          )}
+        </>
       )}
     </div>
   );

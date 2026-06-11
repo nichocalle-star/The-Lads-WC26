@@ -13,6 +13,7 @@ export interface Match {
   awayScore: number | null;
   winner: string | null;
   sofascoreId?: number;
+  odds?: { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
 }
 
 export interface Prediction {

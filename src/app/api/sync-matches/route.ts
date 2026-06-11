@@ -166,6 +166,14 @@ export async function POST(req: NextRequest) {
       const group = TEAM_GROUP[homeTeam] ?? TEAM_GROUP[awayTeam] ?? null;
       const round = mapRound(event.season?.slug ?? "group-stage");
 
+      const oddsData = comps.odds?.[0] ?? null;
+      const odds = oddsData ? {
+        homeML: oddsData.moneyline?.home?.close?.odds ? parseInt(oddsData.moneyline.home.close.odds) : null,
+        awayML: oddsData.moneyline?.away?.close?.odds ? parseInt(oddsData.moneyline.away.close.odds) : null,
+        drawML: oddsData.drawOdds?.moneyLine ?? null,
+        overUnder: oddsData.overUnder ?? null,
+      } : null;
+
       const matchData = {
         matchId: `espn-${event.id}`,
         espnId: event.id,
@@ -181,6 +189,7 @@ export async function POST(req: NextRequest) {
         homeScore,
         awayScore,
         winner,
+        odds,
         updatedAt: new Date().toISOString(),
       };
 
