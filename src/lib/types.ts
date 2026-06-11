@@ -61,4 +61,5 @@ export interface User {
   photoURL?: string;
   isAdmin: boolean;
   createdAt: string;
+  rootingFor?: string;
 }

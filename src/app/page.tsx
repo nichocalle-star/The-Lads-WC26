@@ -2,10 +2,38 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-const KICKOFF = new Date("2026-06-11T19:00:00Z");
-const SHAME_NAMES = ["Daniel Munzer", "Lucas Almeida", "Andres Siboni"];
+const FLAG: Record<string, string> = {
+  Albania: "🇦🇱", Algeria: "🇩🇿", Argentina: "🇦🇷", Australia: "🇦🇺",
+  Austria: "🇦🇹", Belgium: "🇧🇪", Bolivia: "🇧🇴", Brazil: "🇧🇷",
+  Cameroon: "🇨🇲", Canada: "🇨🇦", Chile: "🇨🇱", China: "🇨🇳",
+  Colombia: "🇨🇴", "Costa Rica": "🇨🇷", Croatia: "🇭🇷", Cuba: "🇨🇺",
+  "Czech Republic": "🇨🇿", Denmark: "🇩🇰", "DR Congo": "🇨🇩",
+  Ecuador: "🇪🇨", Egypt: "🇪🇬", England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", France: "🇫🇷",
+  Germany: "🇩🇪", Ghana: "🇬🇭", Greece: "🇬🇷", Guatemala: "🇬🇹",
+  Honduras: "🇭🇳", Hungary: "🇭🇺", Indonesia: "🇮🇩", Iran: "🇮🇷",
+  Iraq: "🇮🇶", "Ivory Coast": "🇨🇮", Jamaica: "🇯🇲", Japan: "🇯🇵",
+  Jordan: "🇯🇴", Mali: "🇲🇱", Mexico: "🇲🇽", Morocco: "🇲🇦",
+  Netherlands: "🇳🇱", "New Zealand": "🇳🇿", Nigeria: "🇳🇬", Norway: "🇳🇴",
+  Oman: "🇴🇲", Panama: "🇵🇦", Paraguay: "🇵🇾", Peru: "🇵🇪",
+  Poland: "🇵🇱", Portugal: "🇵🇹", Qatar: "🇶🇦", Romania: "🇷🇴",
+  "Saudi Arabia": "🇸🇦", Scotland: "🏴󠁧󠁢󠁳󠁣󠁴󠁿", Senegal: "🇸🇳", Serbia: "🇷🇸",
+  Slovakia: "🇸🇰", Slovenia: "🇸🇮", "South Africa": "🇿🇦",
+  "South Korea": "🇰🇷", Spain: "🇪🇸", Sweden: "🇸🇪", Switzerland: "🇨🇭",
+  Tanzania: "🇹🇿", "Trinidad and Tobago": "🇹🇹", Tunisia: "🇹🇳",
+  Turkey: "🇹🇷", Ukraine: "🇺🇦", "United States": "🇺🇸", Uruguay: "🇺🇾",
+  Uzbekistan: "🇺🇿", Venezuela: "🇻🇪",
+};
+
+interface LeaderboardEntry {
+  userId: string;
+  displayName: string;
+  totalPoints: number;
+  rootingFor: string | null;
+  championPick: string | null;
+  rank: number;
+}
 
 function GoogleIcon() {
   return (
@@ -15,79 +43,6 @@ function GoogleIcon() {
       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
       <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
     </svg>
-  );
-}
-
-function WallOfShame({ signedUp }: { signedUp: string[] }) {
-  const [time, setTime] = useState({ h: "00", m: "00" });
-  const [locked, setLocked] = useState(false);
-
-  useEffect(() => {
-    function tick() {
-      const diff = KICKOFF.getTime() - Date.now();
-      if (diff <= 0) { setLocked(true); setTime({ h: "00", m: "00" }); return; }
-      setLocked(false);
-      setTime({
-        h: String(Math.floor(diff / 3600000)).padStart(2, "0"),
-        m: String(Math.floor((diff % 3600000) / 60000)).padStart(2, "0"),
-      });
-    }
-    tick();
-    const id = setInterval(tick, 5000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <div className="bg-gray-950 border border-red-900/40 rounded-2xl p-6 w-full max-w-xs">
-      <p className="text-center text-red-400 font-semibold text-lg mb-1">🔥 Wall of Shame</p>
-      <p className="text-center text-red-900 text-xs mb-4 leading-relaxed">
-        These lads haven&apos;t signed up.<br />Time is running out.
-      </p>
-
-      {!locked ? (
-        <div className="flex gap-2 justify-center mb-5">
-          {[{ v: time.h, l: "Hours" }, { v: time.m, l: "Mins" }].map(({ v, l }) => (
-            <div key={l} className="bg-red-950/60 border border-red-900/50 rounded-lg px-4 py-2 text-center min-w-[64px]">
-              <span className="block text-2xl font-semibold text-red-400 tabular-nums">{v}</span>
-              <span className="text-[9px] text-red-900 uppercase tracking-widest">{l}</span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-center text-xs text-red-700 mb-4 font-semibold">🔒 Bracket locked — they missed it</p>
-      )}
-
-      <p className="text-[10px] text-red-900/70 uppercase tracking-widest mb-2">Missing in action</p>
-      <div className="space-y-1.5 mb-4">
-        {SHAME_NAMES.map((name) => (
-          <div key={name} className="flex items-center gap-2 bg-red-950/30 border border-red-900/30 rounded-lg px-3 py-2">
-            <span className="text-sm">💀</span>
-            <span className="flex-1 text-sm text-red-400 font-medium line-through decoration-red-800">{name}</span>
-            <span className="text-[9px] bg-red-950 text-red-500 rounded px-1.5 py-0.5">MIA</span>
-          </div>
-        ))}
-      </div>
-
-      {signedUp.length > 0 && (
-        <>
-          <div className="border-t border-gray-800 my-3" />
-          <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-2">Signed up</p>
-          <div className="space-y-1.5">
-            {signedUp.map((u) => (
-              <div key={u} className="flex items-center gap-2 bg-green-950/30 border border-green-900/30 rounded-lg px-3 py-2">
-                <span className="text-sm">✅</span>
-                <span className="flex-1 text-sm text-green-400 font-medium">{u}</span>
-                <span className="text-[9px] bg-green-950 text-green-500 rounded px-1.5 py-0.5">IN</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      <p className="text-[10px] text-red-950 text-center mt-4 leading-relaxed">
-        Sign up before kickoff or be remembered<br />as someone who didn&apos;t show up.
-      </p>
-    </div>
   );
 }
 
@@ -188,16 +143,77 @@ function SignInPanel() {
   );
 }
 
-export default function Home() {
-  const { user, loading } = useAuth();
-  const [signedUp, setSignedUp] = useState<string[]>([]);
-  const fetchedRef = useRef(false);
+function CompetitorsCard() {
+  const [entries, setEntries] = useState<LeaderboardEntry[] | null>(null);
 
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-    fetch("/api/usernames").then((r) => r.json()).then((d) => setSignedUp(d.usernames ?? [])).catch(() => {});
+    fetch("/api/leaderboard")
+      .then((r) => r.json())
+      .then((d) => setEntries(d.leaderboard ?? []))
+      .catch(() => setEntries([]));
   }, []);
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden w-full max-w-sm lg:max-w-none">
+      <div className="px-5 py-4 border-b border-gray-800">
+        <p className="font-semibold text-base">🏟️ The Competitors</p>
+        <p className="text-gray-500 text-xs mt-0.5">{entries ? `${entries.length} signed up` : "Loading…"}</p>
+      </div>
+
+      {!entries ? (
+        <div className="flex justify-center py-8">
+          <div className="w-6 h-6 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : entries.length === 0 ? (
+        <p className="text-gray-500 text-sm px-5 py-6 text-center">No players yet</p>
+      ) : (
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-800">
+              <th className="px-4 py-2 text-left text-[10px] text-gray-600 uppercase tracking-wider font-medium w-6">#</th>
+              <th className="px-4 py-2 text-left text-[10px] text-gray-600 uppercase tracking-wider font-medium">Player</th>
+              <th className="px-4 py-2 text-right text-[10px] text-gray-600 uppercase tracking-wider font-medium">Pts</th>
+              <th className="px-2 py-2 text-center text-[10px] text-gray-600 uppercase tracking-wider font-medium">🏆 Predict</th>
+              <th className="px-2 py-2 text-center text-[10px] text-gray-600 uppercase tracking-wider font-medium">❤️ Rooting</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e, i) => (
+              <tr key={e.userId} className="border-b border-gray-800/50 last:border-0">
+                <td className="px-4 py-2.5 text-xs text-gray-500">{i + 1}</td>
+                <td className="px-4 py-2.5">
+                  <span className="text-sm font-medium text-white">{e.displayName}</span>
+                </td>
+                <td className="px-4 py-2.5 text-right">
+                  <span className={`text-sm font-semibold tabular-nums ${e.totalPoints > 0 ? "text-green-400" : "text-gray-600"}`}>
+                    {e.totalPoints}
+                  </span>
+                </td>
+                <td className="px-2 py-2.5 text-center">
+                  {e.championPick ? (
+                    <span title={e.championPick} className="text-lg leading-none">{FLAG[e.championPick] ?? "🏳️"}</span>
+                  ) : (
+                    <span className="text-gray-700 text-xs">—</span>
+                  )}
+                </td>
+                <td className="px-2 py-2.5 text-center">
+                  {e.rootingFor ? (
+                    <span title={e.rootingFor} className="text-lg leading-none">{FLAG[e.rootingFor] ?? "🏳️"}</span>
+                  ) : (
+                    <span className="text-gray-700 text-xs">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+export default function Home() {
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -209,9 +225,9 @@ export default function Home() {
 
   if (!user) {
     return (
-      <div className="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6 py-8 min-h-[70vh]">
+      <div className="flex flex-col lg:flex-row items-start justify-center gap-6 py-8 min-h-[70vh]">
         <SignInPanel />
-        <WallOfShame signedUp={signedUp} />
+        <CompetitorsCard />
       </div>
     );
   }
@@ -244,6 +260,8 @@ export default function Home() {
           <p className="text-gray-400 text-sm mt-1">How points are awarded</p>
         </Link>
       </div>
+
+      <CompetitorsCard />
     </div>
   );
 }
