@@ -3,34 +3,19 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useEffect, useState } from "react";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { Match, Prediction } from "@/lib/types";
+import { flagOf } from "@/lib/teams";
 
-const FLAG: Record<string, string> = {
-  Albania: "🇦🇱", Algeria: "🇩🇿", Argentina: "🇦🇷", Australia: "🇦🇺",
-  Austria: "🇦🇹", Belgium: "🇧🇪", Bolivia: "🇧🇴", Brazil: "🇧🇷",
-  Cameroon: "🇨🇲", Canada: "🇨🇦", Chile: "🇨🇱", China: "🇨🇳",
-  Colombia: "🇨🇴", "Costa Rica": "🇨🇷", Croatia: "🇭🇷", Cuba: "🇨🇺",
-  "Czech Republic": "🇨🇿", Denmark: "🇩🇰", "DR Congo": "🇨🇩",
-  Ecuador: "🇪🇨", Egypt: "🇪🇬", England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", France: "🇫🇷",
-  Germany: "🇩🇪", Ghana: "🇬🇭", Greece: "🇬🇷", Guatemala: "🇬🇹",
-  Honduras: "🇭🇳", Hungary: "🇭🇺", Indonesia: "🇮🇩", Iran: "🇮🇷",
-  Iraq: "🇮🇶", "Ivory Coast": "🇨🇮", Jamaica: "🇯🇲", Japan: "🇯🇵",
-  Jordan: "🇯🇴", Mali: "🇲🇱", Mexico: "🇲🇽", Morocco: "🇲🇦",
-  Netherlands: "🇳🇱", "New Zealand": "🇳🇿", Nigeria: "🇳🇬", Norway: "🇳🇴",
-  Oman: "🇴🇲", Panama: "🇵🇦", Paraguay: "🇵🇾", Peru: "🇵🇪",
-  Poland: "🇵🇱", Portugal: "🇵🇹", Qatar: "🇶🇦", Romania: "🇷🇴",
-  "Saudi Arabia": "🇸🇦", Scotland: "🏴󠁧󠁢󠁳󠁣󠁴󠁿", Senegal: "🇸🇳", Serbia: "🇷🇸",
-  Slovakia: "🇸🇰", Slovenia: "🇸🇮", "South Africa": "🇿🇦",
-  "South Korea": "🇰🇷", Spain: "🇪🇸", Sweden: "🇸🇪", Switzerland: "🇨🇭",
-  Tanzania: "🇹🇿", "Trinidad and Tobago": "🇹🇹", Tunisia: "🇹🇳",
-  Turkey: "🇹🇷", Ukraine: "🇺🇦", "United States": "🇺🇸", Uruguay: "🇺🇾",
-  Uzbekistan: "🇺🇿", Venezuela: "🇻🇪",
-};
+const TZ = "America/New_York";
 
 interface LeaderboardEntry {
   userId: string;
   displayName: string;
   totalPoints: number;
   rootingFor: string | null;
+  hatingOn: string | null;
   championPick: string | null;
   rank: number;
 }
@@ -80,16 +65,16 @@ function SignInPanel() {
   };
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-7 w-full max-w-sm">
+    <div className="bg-[#0b1d12] border border-[#1d3a28] rounded-2xl p-7 w-full max-w-sm">
       <div className="text-center mb-5">
-        <h1 className="text-2xl font-bold">⚽ The Lads</h1>
-        <p className="text-green-400 text-sm mt-1">FIFA World Cup 2026</p>
+        <h1 className="text-2xl font-bold tracking-wide">⚽ THE LADS</h1>
+        <p className="text-[#2bd97a] text-sm mt-1 uppercase tracking-[0.2em] text-[11px]">FIFA World Cup 2026</p>
       </div>
 
-      <div className="flex bg-gray-800 rounded-lg p-0.5 mb-5">
+      <div className="flex bg-[#10301c] rounded-lg p-0.5 mb-5">
         {(["create", "signin"] as const).map((t) => (
           <button key={t} onClick={() => reset(t)}
-            className={`flex-1 py-1.5 rounded-md text-sm transition-colors ${tab === t ? "bg-gray-700 text-white font-medium" : "text-gray-500 hover:text-gray-300"}`}>
+            className={`flex-1 py-1.5 rounded-md text-sm transition-colors ${tab === t ? "bg-[#1d3a28] text-white font-medium" : "text-[#6fae87] hover:text-[#9ec9ad]"}`}>
             {t === "create" ? "Create account" : "Sign in"}
           </button>
         ))}
@@ -97,45 +82,45 @@ function SignInPanel() {
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Username</label>
+          <label className="block text-xs text-[#6fae87] mb-1">Username</label>
           <input type="text" value={username} onChange={(e) => setUsername(e.target.value)}
             placeholder={tab === "create" ? "e.g. goatinho99" : "your username"}
             maxLength={20} required autoFocus
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-600 transition-colors" />
-          {tab === "create" && <p className="text-[11px] text-gray-600 mt-1">3–20 chars · letters, numbers, underscores only</p>}
+            className="w-full bg-[#07140c] border border-[#1d3a28] rounded-lg px-3 py-2 text-sm text-white placeholder-[#3d6b4f] focus:outline-none focus:border-[#2bd97a] transition-colors" />
+          {tab === "create" && <p className="text-[11px] text-[#3d6b4f] mt-1">3–20 chars · letters, numbers, underscores only</p>}
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Password</label>
+          <label className="block text-xs text-[#6fae87] mb-1">Password</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••" required minLength={6}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-600 transition-colors" />
+            className="w-full bg-[#07140c] border border-[#1d3a28] rounded-lg px-3 py-2 text-sm text-white placeholder-[#3d6b4f] focus:outline-none focus:border-[#2bd97a] transition-colors" />
           {tab === "create" && <p className="text-[11px] text-orange-900 mt-1">Don&apos;t use a password that you commonly reuse</p>}
         </div>
         {tab === "create" && (
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Confirm password</label>
+            <label className="block text-xs text-[#6fae87] mb-1">Confirm password</label>
             <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
               placeholder="••••••••" required
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-600 transition-colors" />
+              className="w-full bg-[#07140c] border border-[#1d3a28] rounded-lg px-3 py-2 text-sm text-white placeholder-[#3d6b4f] focus:outline-none focus:border-[#2bd97a] transition-colors" />
           </div>
         )}
 
         {error && <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2">{error}</p>}
 
         <button type="submit" disabled={loading}
-          className="w-full bg-green-700 hover:bg-green-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">
+          className="w-full bg-[#0a7a3d] hover:bg-[#0d9449] disabled:bg-[#10301c] disabled:text-[#3d6b4f] text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">
           {loading ? "Please wait…" : tab === "create" ? "Create account" : "Sign in"}
         </button>
       </form>
 
       <div className="flex items-center gap-2 my-4">
-        <div className="flex-1 h-px bg-gray-800" />
-        <span className="text-xs text-gray-600">or</span>
-        <div className="flex-1 h-px bg-gray-800" />
+        <div className="flex-1 h-px bg-[#16301f]" />
+        <span className="text-xs text-[#3d6b4f]">or</span>
+        <div className="flex-1 h-px bg-[#16301f]" />
       </div>
 
       <button onClick={signInWithGoogle}
-        className="w-full flex items-center justify-center gap-2 border border-gray-700 rounded-lg py-2.5 text-sm text-gray-300 hover:bg-gray-800 transition-colors">
+        className="w-full flex items-center justify-center gap-2 border border-[#1d3a28] rounded-lg py-2.5 text-sm text-[#9ec9ad] hover:bg-[#10301c] transition-colors">
         <GoogleIcon />
         Continue with Google
       </button>
@@ -143,82 +128,115 @@ function SignInPanel() {
   );
 }
 
-function CompetitorsCard() {
+function CompetitorsCard({ entries, highlightUid }: { entries: LeaderboardEntry[] | null; highlightUid?: string }) {
+  return (
+    <div className="bg-[#0b1d12] border border-[#1d3a28] rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#16301f]">
+        <p className="font-semibold text-[15px]">🏆 The Competitors</p>
+        <p className="text-[#6fae87] text-xs">{entries ? `${entries.length} lads · live standings` : "Loading…"}</p>
+      </div>
+
+      {!entries ? (
+        <div className="flex justify-center py-8">
+          <div className="w-6 h-6 border-2 border-[#2bd97a] border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : entries.length === 0 ? (
+        <p className="text-[#6fae87] text-sm px-5 py-6 text-center">No players yet</p>
+      ) : (
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-[#16301f]">
+              <th className="px-4 py-2 text-left text-[10px] text-[#6fae87] uppercase tracking-wider font-medium w-6">#</th>
+              <th className="px-4 py-2 text-left text-[10px] text-[#6fae87] uppercase tracking-wider font-medium">Player</th>
+              <th className="px-2 py-2 text-center text-[10px] text-[#6fae87] uppercase tracking-wider font-medium" title="Predicted champion">🏆</th>
+              <th className="px-2 py-2 text-center text-[10px] text-[#6fae87] uppercase tracking-wider font-medium" title="Rooting for">❤️</th>
+              <th className="px-2 py-2 text-center text-[10px] text-[#6fae87] uppercase tracking-wider font-medium" title="Hating on">💀</th>
+              <th className="px-4 py-2 text-right text-[10px] text-[#6fae87] uppercase tracking-wider font-medium">Pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e, i) => {
+              const isLeader = i === 0 && e.totalPoints > 0;
+              const isMe = e.userId === highlightUid;
+              return (
+                <tr key={e.userId}
+                  className={`border-b border-[#16301f]/60 last:border-0 ${isLeader ? "bg-[#10301c]" : isMe ? "bg-[#0e2517]" : ""}`}>
+                  <td className={`px-4 py-2.5 text-xs ${isLeader ? "text-yellow-400 font-semibold" : "text-[#6fae87]"}`}>{i + 1}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`text-sm ${isMe ? "text-[#2bd97a] font-semibold" : "text-white font-medium"}`}>{e.displayName}</span>
+                  </td>
+                  <td className="px-2 py-2.5 text-center">
+                    {e.championPick ? <span title={e.championPick} className="text-lg leading-none">{flagOf(e.championPick)}</span> : <span className="text-[#3d6b4f] text-xs">—</span>}
+                  </td>
+                  <td className="px-2 py-2.5 text-center">
+                    {e.rootingFor ? <span title={e.rootingFor} className="text-lg leading-none">{flagOf(e.rootingFor)}</span> : <span className="text-[#3d6b4f] text-xs">—</span>}
+                  </td>
+                  <td className="px-2 py-2.5 text-center">
+                    {e.hatingOn ? <span title={e.hatingOn} className="text-lg leading-none">{flagOf(e.hatingOn)}</span> : <span className="text-[#3d6b4f] text-xs">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <span className={`text-sm font-semibold tabular-nums ${e.totalPoints > 0 ? "text-[#2bd97a]" : "text-[#3d6b4f]"}`}>{e.totalPoints}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <div className="px-4 py-2 border-t border-[#16301f] text-[10px] text-[#3d6b4f]">
+        🏆 predicted champion · ❤️ rooting for · 💀 hating on
+      </div>
+    </div>
+  );
+}
+
+function NavRow({ href, icon, accent, title, sub }: { href: string; icon: string; accent: string; title: string; sub: string }) {
+  return (
+    <Link href={href}
+      className="flex items-center gap-3 bg-[#0b1d12] border border-[#1d3a28] rounded-xl px-4 py-3.5 hover:border-[#2bd97a]/50 transition-colors group"
+      style={{ borderLeftWidth: 3, borderLeftColor: accent, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+      <span className="text-xl">{icon}</span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-medium text-white group-hover:text-[#2bd97a] transition-colors">{title}</span>
+        <span className="block text-[11px] text-[#6fae87] mt-0.5">{sub}</span>
+      </span>
+      <span className="text-[#3d6b4f] text-sm">›</span>
+    </Link>
+  );
+}
+
+export default function Home() {
+  const { user, loading } = useAuth();
   const [entries, setEntries] = useState<LeaderboardEntry[] | null>(null);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [myPreds, setMyPreds] = useState<Record<string, Prediction>>({});
 
   useEffect(() => {
     fetch("/api/leaderboard")
       .then((r) => r.json())
       .then((d) => setEntries(d.leaderboard ?? []))
       .catch(() => setEntries([]));
+    fetch("/api/sync-matches")
+      .then((r) => r.json())
+      .then((d) => setMatches(d.matches ?? []))
+      .catch(() => {});
   }, []);
 
-  return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden w-full max-w-sm lg:max-w-none">
-      <div className="px-5 py-4 border-b border-gray-800">
-        <p className="font-semibold text-base">🏟️ The Competitors</p>
-        <p className="text-gray-500 text-xs mt-0.5">{entries ? `${entries.length} signed up` : "Loading…"}</p>
-      </div>
-
-      {!entries ? (
-        <div className="flex justify-center py-8">
-          <div className="w-6 h-6 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : entries.length === 0 ? (
-        <p className="text-gray-500 text-sm px-5 py-6 text-center">No players yet</p>
-      ) : (
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-800">
-              <th className="px-4 py-2 text-left text-[10px] text-gray-600 uppercase tracking-wider font-medium w-6">#</th>
-              <th className="px-4 py-2 text-left text-[10px] text-gray-600 uppercase tracking-wider font-medium">Player</th>
-              <th className="px-4 py-2 text-right text-[10px] text-gray-600 uppercase tracking-wider font-medium">Pts</th>
-              <th className="px-2 py-2 text-center text-[10px] text-gray-600 uppercase tracking-wider font-medium">🏆 Predict</th>
-              <th className="px-2 py-2 text-center text-[10px] text-gray-600 uppercase tracking-wider font-medium">❤️ Rooting</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e, i) => (
-              <tr key={e.userId} className="border-b border-gray-800/50 last:border-0">
-                <td className="px-4 py-2.5 text-xs text-gray-500">{i + 1}</td>
-                <td className="px-4 py-2.5">
-                  <span className="text-sm font-medium text-white">{e.displayName}</span>
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  <span className={`text-sm font-semibold tabular-nums ${e.totalPoints > 0 ? "text-green-400" : "text-gray-600"}`}>
-                    {e.totalPoints}
-                  </span>
-                </td>
-                <td className="px-2 py-2.5 text-center">
-                  {e.championPick ? (
-                    <span title={e.championPick} className="text-lg leading-none">{FLAG[e.championPick] ?? "🏳️"}</span>
-                  ) : (
-                    <span className="text-gray-700 text-xs">—</span>
-                  )}
-                </td>
-                <td className="px-2 py-2.5 text-center">
-                  {e.rootingFor ? (
-                    <span title={e.rootingFor} className="text-lg leading-none">{FLAG[e.rootingFor] ?? "🏳️"}</span>
-                  ) : (
-                    <span className="text-gray-700 text-xs">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-export default function Home() {
-  const { user, loading } = useAuth();
+  useEffect(() => {
+    if (!user) return;
+    getDocs(query(collection(db, "predictions"), where("userId", "==", user.uid)))
+      .then((snap) => {
+        const map: Record<string, Prediction> = {};
+        snap.forEach((d) => { const p = d.data() as Prediction; map[p.matchId] = p; });
+        setMyPreds(map);
+      })
+      .catch(() => {});
+  }, [user]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[#2bd97a] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -227,41 +245,89 @@ export default function Home() {
     return (
       <div className="flex flex-col lg:flex-row items-start justify-center gap-6 py-8 min-h-[70vh]">
         <SignInPanel />
-        <CompetitorsCard />
+        <div className="w-full max-w-sm lg:max-w-md">
+          <CompetitorsCard entries={entries} />
+        </div>
       </div>
     );
   }
 
+  const now = new Date();
+  const upcoming = matches
+    .filter((m) => m.status === "upcoming" && new Date(m.lockTimeUTC ?? m.kickoffTimeUTC) > now)
+    .sort((a, b) => new Date(a.lockTimeUTC ?? a.kickoffTimeUTC).getTime() - new Date(b.lockTimeUTC ?? b.kickoffTimeUTC).getTime());
+  const nextLock = upcoming[0] ?? null;
+
+  const todayKey = now.toLocaleDateString("en-CA", { timeZone: TZ });
+  const todayCount = matches.filter((m) => new Date(m.kickoffTimeUTC).toLocaleDateString("en-CA", { timeZone: TZ }) === todayKey).length;
+
+  const finals = matches
+    .filter((m) => m.status === "final")
+    .sort((a, b) => new Date(b.kickoffTimeUTC).getTime() - new Date(a.kickoffTimeUTC).getTime());
+  const latest = finals[0] ?? null;
+  const latestPred = latest ? myPreds[latest.matchId] : undefined;
+
+  const predCount = Object.keys(myPreds).length;
+  const upcomingCount = matches.filter((m) => new Date(m.kickoffTimeUTC) > now).length;
+
+  let latestPts: number | null = null;
+  if (latest && latestPred && latest.round === "Group Stage") {
+    const exact = latestPred.predictedHomeScore === latest.homeScore && latestPred.predictedAwayScore === latest.awayScore;
+    latestPts = exact ? 2 : latestPred.predictedWinner === latest.winner ? 1 : 0;
+  }
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Welcome back, {user.username ?? user.displayName.split(" ")[0]} 👋</h1>
-        <p className="text-gray-400 mt-1">FIFA World Cup 2026 – Tournament has started!</p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Link href="/schedule" className="bg-gray-900 border border-gray-800 rounded-xl p-6 hover:border-green-500 transition-colors group">
-          <div className="text-3xl mb-3">📅</div>
-          <h2 className="text-lg font-semibold group-hover:text-green-400 transition-colors">Match Schedule</h2>
-          <p className="text-gray-400 text-sm mt-1">View all fixtures and results</p>
-        </Link>
-        <Link href="/predictions" className="bg-gray-900 border border-gray-800 rounded-xl p-6 hover:border-green-500 transition-colors group">
-          <div className="text-3xl mb-3">🎯</div>
-          <h2 className="text-lg font-semibold group-hover:text-green-400 transition-colors">My Predictions</h2>
-          <p className="text-gray-400 text-sm mt-1">Submit and manage your picks</p>
-        </Link>
-        <Link href="/leaderboard" className="bg-gray-900 border border-gray-800 rounded-xl p-6 hover:border-green-500 transition-colors group">
-          <div className="text-3xl mb-3">🏆</div>
-          <h2 className="text-lg font-semibold group-hover:text-green-400 transition-colors">Leaderboard</h2>
-          <p className="text-gray-400 text-sm mt-1">See who&apos;s winning the group</p>
-        </Link>
-        <Link href="/rules" className="bg-gray-900 border border-gray-800 rounded-xl p-6 hover:border-green-500 transition-colors group col-span-1 sm:col-span-3 md:col-span-1">
-          <div className="text-3xl mb-3">📋</div>
-          <h2 className="text-lg font-semibold group-hover:text-green-400 transition-colors">Rules & Scoring</h2>
-          <p className="text-gray-400 text-sm mt-1">How points are awarded</p>
-        </Link>
+    <div className="space-y-5">
+      <div className="flex items-end justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-[11px] text-[#6fae87] uppercase tracking-[0.2em]">Group stage · {todayCount > 0 ? `${todayCount} games today` : "matchday"}</p>
+          <h1 className="text-2xl font-bold mt-1">
+            Welcome back, {user.username ?? user.displayName.split(" ")[0]}{" "}
+            {user.rootingFor && <span title={`Rooting for ${user.rootingFor}`}>{flagOf(user.rootingFor)}</span>}
+          </h1>
+        </div>
+        {nextLock && (
+          <div className="text-right">
+            <p className="text-[11px] text-[#6fae87] uppercase tracking-wider">Next lock</p>
+            <p className="text-sm text-yellow-400 font-medium mt-0.5">
+              🔒 {nextLock.homeTeam} vs {nextLock.awayTeam} ·{" "}
+              {new Date(nextLock.lockTimeUTC ?? nextLock.kickoffTimeUTC).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: TZ })} ET
+            </p>
+          </div>
+        )}
       </div>
 
-      <CompetitorsCard />
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
+        <CompetitorsCard entries={entries} highlightUid={user.uid} />
+
+        <div className="space-y-3">
+          <NavRow href="/predictions" icon="🎯" accent="#2bd97a" title="My predictions"
+            sub={`${predCount} of ${upcomingCount} upcoming matches picked`} />
+          <NavRow href="/schedule" icon="📅" accent="#4ea8de" title="Match schedule"
+            sub={todayCount > 0 ? `${todayCount} games today · bracket view` : "Fixtures, results & bracket"} />
+          <NavRow href="/rules" icon="📋" accent="#ffd166" title="Rules & scoring"
+            sub="Group +1/+2 · knockout points stack" />
+
+          {latest && (
+            <div className="bg-[#10301c] border border-[#2a5c3d] rounded-xl px-4 py-3.5">
+              <p className="text-[10px] text-[#7fd4a3] uppercase tracking-[0.15em]">Latest result · {latest.venue}</p>
+              <p className="text-sm text-white font-semibold mt-1.5">
+                {flagOf(latest.homeTeam)} {latest.homeTeam} {latest.homeScore}–{latest.awayScore} {latest.awayTeam} {flagOf(latest.awayTeam)}
+              </p>
+              {latestPred ? (
+                <p className={`text-[11px] mt-1 ${latestPts ? "text-[#2bd97a]" : "text-[#6fae87]"}`}>
+                  FT · your pick {latestPred.predictedHomeScore}–{latestPred.predictedAwayScore}
+                  {latestPts === 2 && " ✓ exact score +2"}
+                  {latestPts === 1 && " ✓ winner +1"}
+                  {latestPts === 0 && " ✗ no points"}
+                </p>
+              ) : (
+                <p className="text-[11px] text-[#6fae87] mt-1">FT · you didn&apos;t predict this one</p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

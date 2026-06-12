@@ -63,4 +63,5 @@ export interface User {
   isAdmin: boolean;
   createdAt: string;
   rootingFor?: string;
+  hatingOn?: string;
 }

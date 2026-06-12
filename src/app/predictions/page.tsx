@@ -6,49 +6,22 @@ import { db } from "@/lib/firebase";
 import { collection, doc, setDoc, getDocs, query, where } from "firebase/firestore";
 import { Match, Prediction } from "@/lib/types";
 import { useRouter } from "next/navigation";
+import { WC2026_TEAMS, flagOf } from "@/lib/teams";
 
 const TZ = "America/New_York";
 
-// ── Rooting-for picker ────────────────────────────────────────────────────────
+// ── Fan pickers (rooting for / hating on) ─────────────────────────────────────
 
-const WC2026_TEAMS = [
-  "Albania", "Algeria", "Argentina", "Australia", "Austria", "Belgium",
-  "Bolivia", "Brazil", "Cameroon", "Canada", "Chile", "China", "Colombia",
-  "Costa Rica", "Croatia", "Cuba", "Czech Republic", "Denmark", "DR Congo",
-  "Ecuador", "Egypt", "England", "France", "Germany", "Ghana", "Greece",
-  "Guatemala", "Honduras", "Hungary", "Indonesia", "Iran", "Iraq",
-  "Ivory Coast", "Jamaica", "Japan", "Jordan", "Mali", "Mexico", "Morocco",
-  "Netherlands", "New Zealand", "Nigeria", "Norway", "Oman", "Panama",
-  "Paraguay", "Peru", "Poland", "Portugal", "Qatar", "Romania",
-  "Saudi Arabia", "Scotland", "Senegal", "Serbia", "Slovakia", "Slovenia",
-  "South Africa", "South Korea", "Spain", "Sweden", "Switzerland",
-  "Tanzania", "Trinidad and Tobago", "Tunisia", "Turkey", "Ukraine",
-  "United States", "Uruguay", "Uzbekistan", "Venezuela",
-].sort();
-
-const FLAG: Record<string, string> = {
-  Albania: "🇦🇱", Algeria: "🇩🇿", Argentina: "🇦🇷", Australia: "🇦🇺",
-  Austria: "🇦🇹", Belgium: "🇧🇪", Bolivia: "🇧🇴", Brazil: "🇧🇷",
-  Cameroon: "🇨🇲", Canada: "🇨🇦", Chile: "🇨🇱", China: "🇨🇳",
-  Colombia: "🇨🇴", "Costa Rica": "🇨🇷", Croatia: "🇭🇷", Cuba: "🇨🇺",
-  "Czech Republic": "🇨🇿", Denmark: "🇩🇰", "DR Congo": "🇨🇩",
-  Ecuador: "🇪🇨", Egypt: "🇪🇬", England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", France: "🇫🇷",
-  Germany: "🇩🇪", Ghana: "🇬🇭", Greece: "🇬🇷", Guatemala: "🇬🇹",
-  Honduras: "🇭🇳", Hungary: "🇭🇺", Indonesia: "🇮🇩", Iran: "🇮🇷",
-  Iraq: "🇮🇶", "Ivory Coast": "🇨🇮", Jamaica: "🇯🇲", Japan: "🇯🇵",
-  Jordan: "🇯🇴", Mali: "🇲🇱", Mexico: "🇲🇽", Morocco: "🇲🇦",
-  Netherlands: "🇳🇱", "New Zealand": "🇳🇿", Nigeria: "🇳🇬", Norway: "🇳🇴",
-  Oman: "🇴🇲", Panama: "🇵🇦", Paraguay: "🇵🇾", Peru: "🇵🇪",
-  Poland: "🇵🇱", Portugal: "🇵🇹", Qatar: "🇶🇦", Romania: "🇷🇴",
-  "Saudi Arabia": "🇸🇦", Scotland: "🏴󠁧󠁢󠁳󠁣󠁴󠁿", Senegal: "🇸🇳", Serbia: "🇷🇸",
-  Slovakia: "🇸🇰", Slovenia: "🇸🇮", "South Africa": "🇿🇦",
-  "South Korea": "🇰🇷", Spain: "🇪🇸", Sweden: "🇸🇪", Switzerland: "🇨🇭",
-  Tanzania: "🇹🇿", "Trinidad and Tobago": "🇹🇹", Tunisia: "🇹🇳",
-  Turkey: "🇹🇷", Ukraine: "🇺🇦", "United States": "🇺🇸", Uruguay: "🇺🇾",
-  Uzbekistan: "🇺🇿", Venezuela: "🇻🇪",
-};
-
-function RootingForPicker({ userId, initial }: { userId: string; initial?: string }) {
+function TeamPicker({
+  userId, field, label, emptyText, accent, initial,
+}: {
+  userId: string;
+  field: "rootingFor" | "hatingOn";
+  label: string;
+  emptyText: string;
+  accent: "green" | "red";
+  initial?: string;
+}) {
   const [current, setCurrent] = useState<string | null>(initial ?? null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -58,10 +31,17 @@ function RootingForPicker({ userId, initial }: { userId: string; initial?: strin
     t.toLowerCase().includes(search.toLowerCase())
   );
 
+  const btnClass = accent === "green"
+    ? "text-green-400 hover:text-green-300 border-green-900/60 hover:border-green-700"
+    : "text-red-400 hover:text-red-300 border-red-900/60 hover:border-red-700";
+  const selectedClass = accent === "green"
+    ? "bg-green-700/40 border border-green-600/60 text-green-300"
+    : "bg-red-700/40 border border-red-600/60 text-red-300";
+
   async function pick(team: string) {
     setSaving(true);
     try {
-      await setDoc(doc(db, "users", userId), { rootingFor: team }, { merge: true });
+      await setDoc(doc(db, "users", userId), { [field]: team }, { merge: true });
       setCurrent(team);
       setOpen(false);
       setSearch("");
@@ -71,22 +51,22 @@ function RootingForPicker({ userId, initial }: { userId: string; initial?: strin
   }
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4">
+    <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-4 flex-1 min-w-0">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-1">Rooting For</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-1">{label}</p>
           {current ? (
             <div className="flex items-center gap-2">
-              <span className="text-2xl leading-none">{FLAG[current] ?? "🏳️"}</span>
+              <span className="text-2xl leading-none">{flagOf(current)}</span>
               <span className="text-sm font-semibold text-white">{current}</span>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">Not set — pick your team</p>
+            <p className="text-sm text-gray-500">{emptyText}</p>
           )}
         </div>
         <button
           onClick={() => setOpen((o) => !o)}
-          className="text-xs text-green-400 hover:text-green-300 border border-green-900/60 hover:border-green-700 px-3 py-1.5 rounded-lg transition-colors shrink-0"
+          className={`text-xs border px-3 py-1.5 rounded-lg transition-colors shrink-0 ${btnClass}`}
         >
           {open ? "Cancel" : current ? "Change" : "Pick team"}
         </button>
@@ -102,19 +82,17 @@ function RootingForPicker({ userId, initial }: { userId: string; initial?: strin
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-600 transition-colors"
           />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 max-h-64 overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-64 overflow-y-auto pr-1">
             {filtered.map((team) => (
               <button
                 key={team}
                 onClick={() => pick(team)}
                 disabled={saving}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-                  current === team
-                    ? "bg-green-700/40 border border-green-600/60 text-green-300"
-                    : "bg-gray-800 hover:bg-gray-700 text-gray-200 border border-transparent"
+                  current === team ? selectedClass : "bg-gray-800 hover:bg-gray-700 text-gray-200 border border-transparent"
                 }`}
               >
-                <span className="text-base leading-none">{FLAG[team] ?? "🏳️"}</span>
+                <span className="text-base leading-none">{flagOf(team)}</span>
                 <span className="truncate text-xs">{team}</span>
               </button>
             ))}
@@ -434,7 +412,12 @@ export default function PredictionsPage() {
         </div>
       </div>
 
-      <RootingForPicker userId={user!.uid} initial={user?.rootingFor} />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <TeamPicker userId={user!.uid} field="rootingFor" label="❤️ Rooting for"
+          emptyText="Not set — pick your team" accent="green" initial={user?.rootingFor} />
+        <TeamPicker userId={user!.uid} field="hatingOn" label="💀 Hating on"
+          emptyText="Not set — pick your villain" accent="red" initial={user?.hatingOn} />
+      </div>
 
       {pageError && <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">{pageError}</div>}
 
@@ -683,7 +666,7 @@ function PredictionCard({ match, existing, pending, onEdit, groupStandings, thir
             { label: "Draw", val: formatML(odds!.drawML) },
             { label: awayDisplay.length > 10 ? awayDisplay.split(" ")[0] : awayDisplay, val: formatML(odds!.awayML) },
           ].map((o, i, arr) => (
-            <div key={o.label} className={`flex-1 text-center ${i < arr.length - 1 ? "border-r border-gray-800" : ""}`}>
+            <div key={i} className={`flex-1 text-center ${i < arr.length - 1 ? "border-r border-gray-800" : ""}`}>
               <p className="text-[10px] text-gray-600 mb-0.5 truncate px-1">{o.label}</p>
               <p className={`text-xs font-medium ${o.val.startsWith("-") ? "text-green-500" : "text-gray-400"}`}>{o.val}</p>
             </div>

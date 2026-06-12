@@ -9,14 +9,14 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "The Lads – 26 World Cup",
-  description: "FIFA Club World Cup 2026 Bracket Game",
+  title: "The Lads – World Cup 2026",
+  description: "FIFA World Cup 2026 prediction game",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-gray-950 text-white" suppressHydrationWarning>
+      <body className="min-h-full flex flex-col bg-[#050f09] text-white" suppressHydrationWarning>
         {/* Fixed pitch background */}
         <div aria-hidden="true" className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
           <svg

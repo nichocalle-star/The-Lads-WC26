@@ -3,24 +3,7 @@
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-
-const FLAG: Record<string, string> = {
-  Argentina: "🇦🇷", Australia: "🇦🇺", Belgium: "🇧🇪", Bolivia: "🇧🇴",
-  Brazil: "🇧🇷", Cameroon: "🇨🇲", Canada: "🇨🇦", Chile: "🇨🇱",
-  China: "🇨🇳", Colombia: "🇨🇴", "Costa Rica": "🇨🇷", Croatia: "🇭🇷",
-  "Czech Republic": "🇨🇿", Denmark: "🇩🇰", Ecuador: "🇪🇨", Egypt: "🇪🇬",
-  England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", France: "🇫🇷", Germany: "🇩🇪", Ghana: "🇬🇭",
-  Honduras: "🇭🇳", Hungary: "🇭🇺", Indonesia: "🇮🇩", Iran: "🇮🇷",
-  Iraq: "🇮🇶", "Ivory Coast": "🇨🇮", Jamaica: "🇯🇲", Japan: "🇯🇵",
-  Jordan: "🇯🇴", Mexico: "🇲🇽", Morocco: "🇲🇦", Netherlands: "🇳🇱",
-  "New Zealand": "🇳🇿", Nigeria: "🇳🇬", Norway: "🇳🇴", Panama: "🇵🇦",
-  Paraguay: "🇵🇾", Peru: "🇵🇪", Poland: "🇵🇱", Portugal: "🇵🇹",
-  Romania: "🇷🇴", "Saudi Arabia": "🇸🇦", Senegal: "🇸🇳", Serbia: "🇷🇸",
-  "South Africa": "🇿🇦", "South Korea": "🇰🇷", Spain: "🇪🇸", Sweden: "🇸🇪",
-  Switzerland: "🇨🇭", "Trinidad and Tobago": "🇹🇹", Tunisia: "🇹🇳",
-  Turkey: "🇹🇷", Ukraine: "🇺🇦", "United States": "🇺🇸", USA: "🇺🇸",
-  Uruguay: "🇺🇾", Uzbekistan: "🇺🇿", Venezuela: "🇻🇪",
-};
+import { FLAG } from "@/lib/teams";
 
 interface PlayerRow {
   uid: string;

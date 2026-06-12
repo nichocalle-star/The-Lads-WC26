@@ -58,6 +58,7 @@ export async function GET() {
           correctPredictions: (metrics.correctPredictions as number) ?? 0,
           predictionAccuracy: (metrics.predictionAccuracy as number) ?? 0,
           rootingFor: (user.rootingFor as string) ?? null,
+          hatingOn: (user.hatingOn as string) ?? null,
           championPick: championByUser[d.id] ?? null,
         };
       })
