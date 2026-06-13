@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { Match, Prediction } from "@/lib/types";
+import { resolveChampion } from "@/lib/bracket";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -21,27 +23,23 @@ function getAdminDb() {
 export async function GET() {
   try {
     const db = getAdminDb();
-    const [metricsSnap, usersSnap, finalMatchesSnap] = await Promise.all([
+    const [metricsSnap, usersSnap, matchesSnap, predsSnap] = await Promise.all([
       db.collection("userMetrics").get(),
       db.collection("users").get(),
-      db.collection("matches").where("round", "==", "Final").get(),
+      db.collection("matches").get(),
+      db.collection("predictions").get(),
     ]);
 
     const metricsMap: Record<string, Record<string, unknown>> = {};
     for (const d of metricsSnap.docs) metricsMap[d.id] = d.data();
 
-    // Derive champion pick from Final-round predictions
-    const championByUser: Record<string, string> = {};
-    if (!finalMatchesSnap.empty) {
-      const finalIds = finalMatchesSnap.docs.map((d) => d.id);
-      for (let i = 0; i < finalIds.length; i += 30) {
-        const chunk = finalIds.slice(i, i + 30);
-        const predsSnap = await db.collection("predictions").where("matchId", "in", chunk).get();
-        for (const d of predsSnap.docs) {
-          const pred = d.data();
-          if (pred.predictedWinner) championByUser[pred.userId] = pred.predictedWinner as string;
-        }
-      }
+    const matches = matchesSnap.docs.map((d) => d.data() as Match);
+
+    // Group every user's predictions into a matchId-keyed map for bracket resolution.
+    const predsByUser: Record<string, Record<string, Prediction>> = {};
+    for (const d of predsSnap.docs) {
+      const p = d.data() as Prediction;
+      (predsByUser[p.userId] ??= {})[p.matchId] = p;
     }
 
     const leaderboard = usersSnap.docs
@@ -49,6 +47,7 @@ export async function GET() {
         const user = d.data();
         if (!user.username) return null;
         const metrics = metricsMap[d.id] ?? {};
+        const champion = resolveChampion(matches, predsByUser[d.id] ?? {});
         return {
           userId: d.id,
           displayName: user.username as string,
@@ -59,7 +58,7 @@ export async function GET() {
           predictionAccuracy: (metrics.predictionAccuracy as number) ?? 0,
           rootingFor: (user.rootingFor as string) ?? null,
           hatingOn: (user.hatingOn as string) ?? null,
-          championPick: championByUser[d.id] ?? null,
+          championPick: champion,
         };
       })
       .filter(Boolean)

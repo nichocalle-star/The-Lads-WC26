@@ -2,14 +2,31 @@
 
 import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { FLAG } from "@/lib/teams";
+import { useEffect, useState, Fragment } from "react";
+import { FLAG, flagOf } from "@/lib/teams";
 
 interface PlayerRow {
   uid: string;
   username: string;
   totalPoints: number;
+  predictionCount: number;
   championPick: string | null;
+  rootingFor: string | null;
+  hatingOn: string | null;
+}
+
+interface PredRow {
+  matchId: string;
+  round: string;
+  home: string;
+  away: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  winner: string | null;
+  pointsAwarded: number;
+  actualStatus: string;
+  actualHome: number | null;
+  actualAway: number | null;
 }
 
 export default function AdminPage() {
@@ -31,12 +48,32 @@ export default function AdminPage() {
   const [deleteResult, setDeleteResult] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [expandedUid, setExpandedUid] = useState<string | null>(null);
+  const [predsByUid, setPredsByUid] = useState<Record<string, PredRow[]>>({});
+  const [predsLoadingUid, setPredsLoadingUid] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
   }, [user, loading, router]);
 
   const authHeader = { Authorization: `Bearer ${adminSecret}` };
+
+  async function togglePredictions(uid: string) {
+    if (expandedUid === uid) { setExpandedUid(null); return; }
+    setExpandedUid(uid);
+    if (!predsByUid[uid]) {
+      setPredsLoadingUid(uid);
+      try {
+        const res = await fetch(`/api/admin/user-predictions?uid=${uid}`, { headers: authHeader });
+        if (res.ok) {
+          const data = await res.json();
+          setPredsByUid((prev) => ({ ...prev, [uid]: data.predictions }));
+        }
+      } finally {
+        setPredsLoadingUid(null);
+      }
+    }
+  }
 
   async function unlock() {
     setPlayersLoading(true);
@@ -182,40 +219,51 @@ export default function AdminPage() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-800">
           <h2 className="text-lg font-semibold">Players</h2>
-          <p className="text-gray-500 text-xs mt-0.5">{players?.length ?? 0} signed up</p>
+          <p className="text-gray-500 text-xs mt-0.5">{players?.length ?? 0} signed up · click a row to view their predictions</p>
         </div>
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-800">
               <th className="px-6 py-2 text-left text-[11px] text-gray-500 uppercase tracking-wider font-medium w-8">#</th>
               <th className="px-6 py-2 text-left text-[11px] text-gray-500 uppercase tracking-wider font-medium">Player</th>
-              <th className="px-6 py-2 text-right text-[11px] text-gray-500 uppercase tracking-wider font-medium">Points</th>
-              <th className="px-6 py-2 text-left text-[11px] text-gray-500 uppercase tracking-wider font-medium pl-4">Predicted Champion</th>
+              <th className="px-3 py-2 text-right text-[11px] text-gray-500 uppercase tracking-wider font-medium">Pts</th>
+              <th className="px-3 py-2 text-right text-[11px] text-gray-500 uppercase tracking-wider font-medium">Picks</th>
+              <th className="px-3 py-2 text-center text-[11px] text-gray-500 uppercase tracking-wider font-medium" title="Predicted champion">🏆</th>
+              <th className="px-3 py-2 text-center text-[11px] text-gray-500 uppercase tracking-wider font-medium" title="Rooting for">❤️</th>
+              <th className="px-3 py-2 text-center text-[11px] text-gray-500 uppercase tracking-wider font-medium" title="Hating on">💀</th>
+              <th className="px-4 py-2 w-6"></th>
             </tr>
           </thead>
           <tbody>
             {players?.map((p, i) => (
-              <tr key={p.uid} className="border-b border-gray-800/60 last:border-0 hover:bg-gray-800/30 transition-colors">
-                <td className="px-6 py-3 text-sm text-gray-500">{i + 1}</td>
-                <td className="px-6 py-3">
-                  <span className="text-sm font-medium text-white">{p.username}</span>
-                </td>
-                <td className="px-6 py-3 text-right">
-                  <span className={`text-sm font-semibold tabular-nums ${p.totalPoints > 0 ? "text-green-400" : "text-gray-500"}`}>
-                    {p.totalPoints}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {p.championPick ? (
-                    <span className="flex items-center gap-2 text-sm">
-                      <span className="text-xl leading-none">{FLAG[p.championPick] ?? "🏳️"}</span>
-                      <span className="text-gray-300">{p.championPick}</span>
-                    </span>
-                  ) : (
-                    <span className="text-gray-600 text-sm">—</span>
-                  )}
-                </td>
-              </tr>
+              <Fragment key={p.uid}>
+                <tr onClick={() => togglePredictions(p.uid)}
+                  className="border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors cursor-pointer">
+                  <td className="px-6 py-3 text-sm text-gray-500">{i + 1}</td>
+                  <td className="px-6 py-3"><span className="text-sm font-medium text-white">{p.username}</span></td>
+                  <td className="px-3 py-3 text-right">
+                    <span className={`text-sm font-semibold tabular-nums ${p.totalPoints > 0 ? "text-green-400" : "text-gray-500"}`}>{p.totalPoints}</span>
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-400">{p.predictionCount}</td>
+                  <td className="px-3 py-3 text-center">{p.championPick ? <span title={p.championPick} className="text-lg">{FLAG[p.championPick] ?? "🏳️"}</span> : <span className="text-gray-600">—</span>}</td>
+                  <td className="px-3 py-3 text-center">{p.rootingFor ? <span title={p.rootingFor} className="text-lg">{FLAG[p.rootingFor] ?? "🏳️"}</span> : <span className="text-gray-600">—</span>}</td>
+                  <td className="px-3 py-3 text-center">{p.hatingOn ? <span title={p.hatingOn} className="text-lg">{FLAG[p.hatingOn] ?? "🏳️"}</span> : <span className="text-gray-600">—</span>}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{expandedUid === p.uid ? "▲" : "▼"}</td>
+                </tr>
+                {expandedUid === p.uid && (
+                  <tr className="bg-gray-950/60">
+                    <td colSpan={8} className="px-6 py-4">
+                      {predsLoadingUid === p.uid ? (
+                        <p className="text-sm text-gray-500">Loading predictions…</p>
+                      ) : (predsByUid[p.uid]?.length ?? 0) === 0 ? (
+                        <p className="text-sm text-gray-500">No predictions yet.</p>
+                      ) : (
+                        <PredictionsList rows={predsByUid[p.uid]} />
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -286,6 +334,61 @@ export default function AdminPage() {
           Set <code className="bg-gray-800 px-1 rounded">isAdmin: true</code> on the user&apos;s document in the <code className="bg-gray-800 px-1 rounded">users</code> Firestore collection.
         </p>
       </div>
+    </div>
+  );
+}
+
+const ROUND_LABEL: Record<string, string> = {
+  "Group Stage": "Group Stage",
+  "Round of 32": "Round of 32",
+  "Round of 16": "Round of 16",
+  "Quarterfinal": "Quarterfinals",
+  "Semifinal": "Semifinals",
+  "Final": "Final",
+};
+
+function PredictionsList({ rows }: { rows: PredRow[] }) {
+  // Group rows by round, preserving the (already sorted) order.
+  const groups: { round: string; rows: PredRow[] }[] = [];
+  for (const r of rows) {
+    let g = groups[groups.length - 1];
+    if (!g || g.round !== r.round) { g = { round: r.round, rows: [] }; groups.push(g); }
+    g.rows.push(r);
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <div key={g.round}>
+          <p className="text-[11px] text-gray-500 uppercase tracking-wider font-medium mb-1.5">{ROUND_LABEL[g.round] ?? g.round}</p>
+          <div className="space-y-1">
+            {g.rows.map((r) => {
+              const decided = r.actualStatus === "final";
+              return (
+                <div key={r.matchId} className="flex items-center gap-2 text-sm bg-gray-900/60 rounded-lg px-3 py-1.5">
+                  <span className="flex-1 text-right text-gray-300 truncate">
+                    {flagOf(r.home)} {r.home}
+                  </span>
+                  <span className="tabular-nums font-semibold text-white min-w-[44px] text-center">
+                    {r.homeScore}–{r.awayScore}
+                  </span>
+                  <span className="flex-1 text-gray-300 truncate">
+                    {r.away} {flagOf(r.away)}
+                  </span>
+                  {decided && (
+                    <span className="text-[11px] text-gray-500 shrink-0 ml-1">
+                      actual {r.actualHome}–{r.actualAway}
+                    </span>
+                  )}
+                  <span className={`text-xs shrink-0 w-12 text-right tabular-nums ${r.pointsAwarded > 0 ? "text-green-400" : "text-gray-600"}`}>
+                    {r.pointsAwarded > 0 ? `+${r.pointsAwarded}` : decided ? "0" : ""}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

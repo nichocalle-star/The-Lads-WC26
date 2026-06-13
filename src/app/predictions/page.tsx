@@ -7,6 +7,10 @@ import { collection, doc, setDoc, getDocs, query, where } from "firebase/firesto
 import { Match, Prediction } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { WC2026_TEAMS, flagOf } from "@/lib/teams";
+import {
+  TeamRow, BRACKET_MAP, calcGroupStandings, calcThirdPlaceQualifiers,
+  resolveSlot,
+} from "@/lib/bracket";
 
 const TZ = "America/New_York";
 
@@ -108,168 +112,6 @@ function formatKickoff(iso: string) {
   const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: TZ });
   const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: TZ });
   return `${date}, ${time} ET`;
-}
-
-// ── Group standings ───────────────────────────────────────────────────────────
-
-interface TeamRow { team: string; w: number; d: number; l: number; gf: number; ga: number; pts: number }
-
-function calcGroupStandings(groupMatches: Match[], predictions: Record<string, Prediction>): TeamRow[] {
-  const rows: Record<string, TeamRow> = {};
-  const ensure = (t: string) => { if (!rows[t]) rows[t] = { team: t, w: 0, d: 0, l: 0, gf: 0, ga: 0, pts: 0 }; };
-
-  for (const m of groupMatches) {
-    ensure(m.homeTeam); ensure(m.awayTeam);
-    const pred = predictions[m.matchId];
-    if (!pred) continue;
-    const hs = pred.predictedHomeScore ?? null;
-    const as_ = pred.predictedAwayScore ?? null;
-    if (hs === null || as_ === null) continue;
-
-    rows[m.homeTeam].gf += hs; rows[m.homeTeam].ga += as_;
-    rows[m.awayTeam].gf += as_; rows[m.awayTeam].ga += hs;
-
-    if (hs > as_) { rows[m.homeTeam].w++; rows[m.homeTeam].pts += 3; rows[m.awayTeam].l++; }
-    else if (as_ > hs) { rows[m.awayTeam].w++; rows[m.awayTeam].pts += 3; rows[m.homeTeam].l++; }
-    else { rows[m.homeTeam].d++; rows[m.homeTeam].pts++; rows[m.awayTeam].d++; rows[m.awayTeam].pts++; }
-  }
-
-  return Object.values(rows).sort((a, b) =>
-    b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf
-  );
-}
-
-// ── Full bracket map (ESPN match IDs sourced from API, bracket order verified) ─
-
-// "W:espn-XXXXXX" = winner of that match. Slots chain through the whole bracket.
-const BRACKET_MAP: Record<string, { home: string; away: string }> = {
-  // Round of 32 — fixed group/3rd-place slots
-  "espn-760486": { home: "A_2",   away: "B_2"   },
-  "espn-760487": { home: "C_1",   away: "F_2"   },
-  "espn-760489": { home: "E_1",   away: "3rd_4" },
-  "espn-760488": { home: "F_1",   away: "C_2"   },
-  "espn-760490": { home: "E_2",   away: "I_2"   },
-  "espn-760492": { home: "I_1",   away: "3rd_6" },
-  "espn-760491": { home: "A_1",   away: "3rd_1" },
-  "espn-760495": { home: "L_1",   away: "3rd_8" },
-  "espn-760493": { home: "G_1",   away: "3rd_5" },
-  "espn-760494": { home: "D_1",   away: "3rd_3" },
-  "espn-760497": { home: "H_1",   away: "J_2"   },
-  "espn-760496": { home: "K_2",   away: "L_2"   },
-  "espn-760498": { home: "B_1",   away: "3rd_2" },
-  "espn-760499": { home: "D_2",   away: "G_2"   },
-  "espn-760500": { home: "J_1",   away: "H_2"   },
-  "espn-760501": { home: "K_1",   away: "3rd_7" },
-  // Round of 16 — winners of specific R32 matches (ESPN bracket order #1-16)
-  "espn-760502": { home: "W:espn-760486", away: "W:espn-760489" }, // R32 #1 vs #3
-  "espn-760503": { home: "W:espn-760487", away: "W:espn-760490" }, // R32 #2 vs #5
-  "espn-760504": { home: "W:espn-760488", away: "W:espn-760492" }, // R32 #4 vs #6
-  "espn-760505": { home: "W:espn-760491", away: "W:espn-760495" }, // R32 #7 vs #8
-  "espn-760506": { home: "W:espn-760497", away: "W:espn-760496" }, // R32 #11 vs #12
-  "espn-760507": { home: "W:espn-760493", away: "W:espn-760494" }, // R32 #9 vs #10
-  "espn-760509": { home: "W:espn-760499", away: "W:espn-760501" }, // R32 #14 vs #16
-  "espn-760508": { home: "W:espn-760498", away: "W:espn-760500" }, // R32 #13 vs #15
-  // Quarter-finals — winners of specific R16 matches
-  "espn-760510": { home: "W:espn-760502", away: "W:espn-760503" }, // R16 #1 vs #2
-  "espn-760511": { home: "W:espn-760506", away: "W:espn-760507" }, // R16 #5 vs #6
-  "espn-760512": { home: "W:espn-760504", away: "W:espn-760505" }, // R16 #3 vs #4
-  "espn-760513": { home: "W:espn-760509", away: "W:espn-760508" }, // R16 #7 vs #8
-  // Semi-finals
-  "espn-760514": { home: "W:espn-760510", away: "W:espn-760511" }, // QF #1 vs #2
-  "espn-760515": { home: "W:espn-760512", away: "W:espn-760513" }, // QF #3 vs #4
-  // 3rd Place
-  "espn-760516": { home: "L:espn-760514", away: "L:espn-760515" },
-  // Final
-  "espn-760517": { home: "W:espn-760514", away: "W:espn-760515" },
-};
-
-// R32 slots list (for bracket tab display)
-const R32_SLOTS = Object.entries(BRACKET_MAP)
-  .filter(([, v]) => !v.home.startsWith("W:"))
-  .map(([matchId, v]) => ({ matchId, ...v }));
-
-// ── 3rd-place qualification ───────────────────────────────────────────────────
-
-function calcThirdPlaceQualifiers(groupStandings: Record<string, TeamRow[]>): TeamRow[] {
-  const thirds: TeamRow[] = [];
-  for (const rows of Object.values(groupStandings)) {
-    if (rows[2]) thirds.push(rows[2]);
-  }
-  return thirds
-    .sort((a, b) => b.pts - a.pts || (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf)
-    .slice(0, 8);
-}
-
-// ── Slot/winner resolution ────────────────────────────────────────────────────
-
-function resolveSlot(
-  slot: string,
-  standings: Record<string, TeamRow[]>,
-  thirdPlace: TeamRow[],
-  predictions: Record<string, Prediction>
-): string {
-  if (slot.startsWith("W:")) {
-    return resolveMatchWinner(slot.slice(2), standings, thirdPlace, predictions);
-  }
-  if (slot.startsWith("L:")) {
-    return resolveMatchLoser(slot.slice(2), standings, thirdPlace, predictions);
-  }
-  if (slot.startsWith("3rd_")) {
-    const rank = parseInt(slot.replace("3rd_", "")) - 1;
-    return thirdPlace[rank]?.team ?? `3rd-Place #${rank + 1}`;
-  }
-  const [group, posStr] = slot.split("_");
-  const pos = parseInt(posStr) - 1;
-  return standings[group]?.[pos]?.team ?? `Group ${group} #${pos + 1}`;
-}
-
-function resolveMatchWinner(
-  matchId: string,
-  standings: Record<string, TeamRow[]>,
-  thirdPlace: TeamRow[],
-  predictions: Record<string, Prediction>
-): string {
-  const slots = BRACKET_MAP[matchId];
-  if (!slots) return "?";
-  const pred = predictions[matchId];
-  const hs = pred?.predictedHomeScore ?? null;
-  const as_ = pred?.predictedAwayScore ?? null;
-  if (hs !== null && as_ !== null) {
-    if (hs > as_) return resolveSlot(slots.home, standings, thirdPlace, predictions);
-    if (as_ > hs) return resolveSlot(slots.away, standings, thirdPlace, predictions);
-    if (pred?.predictedWinner && pred.predictedWinner !== "draw") return pred.predictedWinner;
-  }
-  const h = resolveSlot(slots.home, standings, thirdPlace, predictions);
-  const a = resolveSlot(slots.away, standings, thirdPlace, predictions);
-  if (h === a) return h;
-  return `${h} / ${a}`;
-}
-
-function resolveMatchLoser(
-  matchId: string,
-  standings: Record<string, TeamRow[]>,
-  thirdPlace: TeamRow[],
-  predictions: Record<string, Prediction>
-): string {
-  const slots = BRACKET_MAP[matchId];
-  if (!slots) return "?";
-  const pred = predictions[matchId];
-  const hs = pred?.predictedHomeScore ?? null;
-  const as_ = pred?.predictedAwayScore ?? null;
-  if (hs !== null && as_ !== null) {
-    if (hs > as_) return resolveSlot(slots.away, standings, thirdPlace, predictions);
-    if (as_ > hs) return resolveSlot(slots.home, standings, thirdPlace, predictions);
-    if (pred?.predictedWinner && pred.predictedWinner !== "draw") {
-      const winner = pred.predictedWinner;
-      const h = resolveSlot(slots.home, standings, thirdPlace, predictions);
-      const a = resolveSlot(slots.away, standings, thirdPlace, predictions);
-      return winner === h ? a : h;
-    }
-  }
-  const h = resolveSlot(slots.home, standings, thirdPlace, predictions);
-  const a = resolveSlot(slots.away, standings, thirdPlace, predictions);
-  if (h === a) return h;
-  return `${h} / ${a}`;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
