@@ -38,6 +38,18 @@ function fmtML(ml: number | null): string {
   return ml > 0 ? `+${ml}` : `${ml}`;
 }
 
+function isLocked(match: Match): boolean {
+  return new Date() >= new Date(match.lockTimeUTC ?? match.kickoffTimeUTC);
+}
+
+interface MatchPicks {
+  homeTeam: string;
+  awayTeam: string;
+  summary: { home: number; draw: number; away: number };
+  picks: { username: string; homeScore: number | null; awayScore: number | null; winner: string }[];
+  noPicks: string[];
+}
+
 export default function SchedulePage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,6 +216,27 @@ function BracketCard({ match }: { match: Match }) {
 
 function MatchCard({ match }: { match: Match }) {
   const style = STATUS_STYLE[match.status] ?? STATUS_STYLE.upcoming;
+  const locked = isLocked(match);
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<MatchPicks | null>(null);
+  const [loadingPicks, setLoadingPicks] = useState(false);
+
+  async function toggle() {
+    if (open) { setOpen(false); return; }
+    setOpen(true);
+    if (!data) {
+      setLoadingPicks(true);
+      try {
+        const res = await fetch(`/api/match-predictions?matchId=${match.matchId}`);
+        const d = await res.json();
+        if (d.locked) setData(d);
+      } finally {
+        setLoadingPicks(false);
+      }
+    }
+  }
+
+  const total = data ? data.picks.length : 0;
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -242,6 +275,83 @@ function MatchCard({ match }: { match: Match }) {
         </div>
       </div>
       <p className="text-center text-xs text-gray-600 mt-2">{match.venue}</p>
+
+      {locked && (
+        <div className="mt-3 -mx-4 -mb-4">
+          <button
+            onClick={toggle}
+            className="w-full flex items-center justify-center gap-2 bg-[#10301c] hover:bg-[#143b24] border-t border-[#1d3a28] text-[#2bd97a] text-sm font-medium py-2.5 rounded-b-xl transition-colors"
+          >
+            <i className="ti ti-eye" aria-hidden="true" />
+            See the lads&apos; picks{data ? ` (${total})` : ""}
+            <span className="text-xs">{open ? "▲" : "▼"}</span>
+          </button>
+
+          {open && (
+            <div className="bg-[#0b1d12] border-t border-[#16301f] rounded-b-xl overflow-hidden">
+              {loadingPicks ? (
+                <p className="text-sm text-[#6fae87] px-4 py-4 text-center">Loading picks…</p>
+              ) : !data ? (
+                <p className="text-sm text-[#6fae87] px-4 py-4 text-center">Picks unlock at kickoff.</p>
+              ) : (
+                <MatchPicksPanel data={data} />
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function MatchPicksPanel({ data }: { data: MatchPicks }) {
+  return (
+    <>
+      {/* Consensus summary */}
+      <div className="flex justify-around px-4 py-3 border-b border-[#16301f] bg-[#0e2517]">
+        <div className="text-center">
+          <p className="text-xl font-semibold text-white">{data.summary.home}</p>
+          <p className="text-[11px] text-[#9ec9ad] mt-0.5">{FLAG[data.homeTeam] ?? ""} {data.homeTeam}</p>
+        </div>
+        <div className="text-center">
+          <p className="text-xl font-semibold text-[#6fae87]">{data.summary.draw}</p>
+          <p className="text-[11px] text-[#6fae87] mt-0.5">Draw</p>
+        </div>
+        <div className="text-center">
+          <p className="text-xl font-semibold text-[#2bd97a]">{data.summary.away}</p>
+          <p className="text-[11px] text-[#9ec9ad] mt-0.5">{FLAG[data.awayTeam] ?? ""} {data.awayTeam}</p>
+        </div>
+      </div>
+
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-[10px] text-[#6fae87] tracking-wider">
+            <td className="px-4 pt-2 pb-1">PLAYER</td>
+            <td className="text-center">SCORE</td>
+            <td className="text-right px-4">WINNER</td>
+          </tr>
+        </thead>
+        <tbody>
+          {data.picks.map((p, i) => (
+            <tr key={p.username} className={`border-t border-[#16301f] ${i % 2 ? "bg-[#0e2517]" : ""}`}>
+              <td className="px-4 py-2 text-[#f0f7f2]">{p.username}</td>
+              <td className="text-center text-[#f0f7f2] font-medium tabular-nums">{p.homeScore} – {p.awayScore}</td>
+              <td className="text-right px-4 text-[#9ec9ad]">
+                {p.winner === "Draw" ? <span className="text-[#6fae87]">Draw</span> : <span>{FLAG[p.winner] ?? ""} {p.winner}</span>}
+              </td>
+            </tr>
+          ))}
+          {data.noPicks.map((name) => (
+            <tr key={name} className="border-t border-[#16301f]">
+              <td className="px-4 py-2 text-[#9ec9ad]">
+                {name} <span className="text-[11px] text-[#a33]">· 🐔 bottled it</span>
+              </td>
+              <td className="text-center text-[#3d6b4f]">—</td>
+              <td className="text-right px-4 text-[#3d6b4f]">—</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
