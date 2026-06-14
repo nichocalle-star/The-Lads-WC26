@@ -7,6 +7,7 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Match, Prediction } from "@/lib/types";
 import { flagOf } from "@/lib/teams";
+import { MatchCard } from "@/components/MatchCard";
 
 const TZ = "America/New_York";
 
@@ -258,6 +259,12 @@ export default function Home() {
     .sort((a, b) => new Date(a.lockTimeUTC ?? a.kickoffTimeUTC).getTime() - new Date(b.lockTimeUTC ?? b.kickoffTimeUTC).getTime());
   const nextLock = upcoming[0] ?? null;
 
+  // The next game to be played (live or soonest upcoming) — shown with its
+  // picks reveal, which only unlocks once the match has locked.
+  const nextGame = matches
+    .filter((m) => m.status !== "final")
+    .sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime())[0] ?? null;
+
   const todayKey = now.toLocaleDateString("en-CA", { timeZone: TZ });
   const todayCount = matches.filter((m) => new Date(m.kickoffTimeUTC).toLocaleDateString("en-CA", { timeZone: TZ }) === todayKey).length;
 
@@ -296,6 +303,15 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {nextGame && (
+        <div>
+          <p className="text-[11px] text-[#6fae87] uppercase tracking-[0.2em] mb-2">
+            {nextGame.status === "live" ? "Live now" : "Next up"}
+          </p>
+          <MatchCard match={nextGame} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <CompetitorsCard entries={entries} highlightUid={user.uid} />
