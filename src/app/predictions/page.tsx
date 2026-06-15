@@ -11,6 +11,7 @@ import {
   TeamRow, BRACKET_MAP, calcGroupStandings, calcThirdPlaceQualifiers,
   resolveSlot,
 } from "@/lib/bracket";
+import { isMatchLocked } from "@/lib/lock";
 
 const TZ = "America/New_York";
 
@@ -174,7 +175,7 @@ export default function PredictionsPage() {
       const now = new Date().toISOString();
       const writes = Object.entries(pendingEdits).map(async ([matchId, edit]) => {
         const match = matches.find((m) => m.matchId === matchId);
-        if (match && new Date() >= new Date(match.lockTimeUTC ?? match.kickoffTimeUTC)) return;
+        if (match && isMatchLocked(match)) return;
         const hs = parseInt(edit.homeScore);
         const as_ = parseInt(edit.awayScore);
         if (isNaN(hs) || isNaN(as_)) return;
@@ -443,7 +444,7 @@ function PredictionCard({ match, existing, pending, onEdit, groupStandings, thir
   thirdPlaceQualifiers: TeamRow[];
   predictions: Record<string, Prediction>;
 }) {
-  const isLocked = new Date() >= new Date(match.lockTimeUTC ?? match.kickoffTimeUTC);
+  const isLocked = isMatchLocked(match);
 
   const homeScore = pending?.homeScore ?? existing?.predictedHomeScore?.toString() ?? "";
   const awayScore = pending?.awayScore ?? existing?.predictedAwayScore?.toString() ?? "";

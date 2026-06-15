@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
+import { isMatchLocked } from "@/lib/lock";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -45,12 +46,10 @@ export async function POST(req: NextRequest) {
     }
 
     const match = matchSnap.data()!;
-    const lockTime = new Date(match.lockTimeUTC ?? match.kickoffTimeUTC);
-    const now = new Date(); // server time — cannot be spoofed by user
-
-    if (now >= lockTime) {
+    // Server time — cannot be spoofed by the client.
+    if (isMatchLocked(match as { lockTimeUTC?: string; kickoffTimeUTC: string })) {
       return NextResponse.json(
-        { error: "Predictions for this match are now locked." },
+        { error: "Predictions are now locked." },
         { status: 403 }
       );
     }

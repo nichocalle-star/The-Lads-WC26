@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { Match } from "@/lib/types";
 import { FLAG } from "@/lib/teams";
+import { isMatchLocked } from "@/lib/lock";
 
 const TZ = "America/New_York";
 
@@ -17,10 +18,6 @@ function formatKickoff(isoString: string): string {
   return new Date(isoString).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: TZ }) + " ET";
 }
 
-export function isLocked(match: Match): boolean {
-  return new Date() >= new Date(match.lockTimeUTC ?? match.kickoffTimeUTC);
-}
-
 interface MatchPicks {
   homeTeam: string;
   awayTeam: string;
@@ -31,7 +28,7 @@ interface MatchPicks {
 
 export function MatchCard({ match }: { match: Match }) {
   const style = STATUS_STYLE[match.status] ?? STATUS_STYLE.upcoming;
-  const locked = isLocked(match);
+  const locked = isMatchLocked(match);
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<MatchPicks | null>(null);
   const [loadingPicks, setLoadingPicks] = useState(false);

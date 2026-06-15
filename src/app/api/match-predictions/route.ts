@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { Match, Prediction } from "@/lib/types";
+import { isMatchLocked } from "@/lib/lock";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -31,8 +32,7 @@ export async function GET(req: NextRequest) {
   if (!matchSnap.exists) return NextResponse.json({ error: "Match not found" }, { status: 404 });
 
   const match = matchSnap.data() as Match;
-  const lockTime = new Date(match.lockTimeUTC ?? match.kickoffTimeUTC);
-  if (new Date() < lockTime) {
+  if (!isMatchLocked(match)) {
     return NextResponse.json({ locked: false });
   }
 
