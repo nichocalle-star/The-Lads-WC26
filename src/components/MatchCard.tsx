@@ -18,6 +18,16 @@ function formatKickoff(isoString: string): string {
   return new Date(isoString).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: TZ }) + " ET";
 }
 
+function formatML(ml: number | null): string {
+  if (ml === null || ml === undefined || isNaN(ml)) return "—";
+  return ml > 0 ? `+${ml}` : `${ml}`;
+}
+
+// Short label for the odds row — first word for long names so the row fits.
+function shortName(name: string): string {
+  return name.length > 10 ? name.split(" ")[0] : name;
+}
+
 interface MatchPicks {
   homeTeam: string;
   awayTeam: string;
@@ -87,6 +97,28 @@ export function MatchCard({ match }: { match: Match }) {
         </div>
       </div>
       <p className="text-center text-xs text-gray-600 mt-2">{match.venue}</p>
+
+      {match.status !== "final" && match.odds?.homeML != null && (
+        <div className="flex items-center border-t border-gray-800 pt-2.5 mt-2.5 gap-0">
+          {[
+            { label: shortName(match.homeTeam), val: formatML(match.odds.homeML) },
+            { label: "Draw", val: formatML(match.odds.drawML) },
+            { label: shortName(match.awayTeam), val: formatML(match.odds.awayML) },
+          ].map((o, i, arr) => (
+            <div key={i} className={`flex-1 text-center ${i < arr.length - 1 ? "border-r border-gray-800" : ""}`}>
+              <p className="text-[10px] text-gray-600 mb-0.5 truncate px-1">{o.label}</p>
+              <p className={`text-xs font-medium ${o.val.startsWith("-") ? "text-green-500" : "text-gray-400"}`}>{o.val}</p>
+            </div>
+          ))}
+          {match.odds.overUnder !== null && (
+            <div className="text-center pl-3 border-l border-gray-800 shrink-0">
+              <p className="text-[10px] text-gray-600 mb-0.5">O/U</p>
+              <p className="text-xs font-medium text-gray-400">{match.odds.overUnder}</p>
+            </div>
+          )}
+          <p className="text-[9px] text-gray-700 pl-2 shrink-0">DK</p>
+        </div>
+      )}
 
       {locked && (
         <div className="mt-3 -mx-4 -mb-4">
