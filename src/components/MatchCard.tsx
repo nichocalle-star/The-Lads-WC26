@@ -153,15 +153,6 @@ function MatchPicksPanel({ data }: { data: MatchPicks }) {
               </td>
             </tr>
           ))}
-          {data.noPicks.map((name) => (
-            <tr key={name} className="border-t border-[#16301f]">
-              <td className="px-4 py-2 text-[#3d6b4f]">
-                {name} <span className="text-[11px]">· no pick</span>
-              </td>
-              <td className="text-center text-[#3d6b4f]">—</td>
-              <td className="text-right px-4 text-[#3d6b4f]">—</td>
-            </tr>
-          ))}
         </tbody>
       </table>
     </>

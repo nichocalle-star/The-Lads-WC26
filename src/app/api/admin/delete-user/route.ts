@@ -4,6 +4,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 function getAdmin() {
   if (!getApps().length) {
