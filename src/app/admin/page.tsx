@@ -51,6 +51,8 @@ export default function AdminPage() {
   const [expandedUid, setExpandedUid] = useState<string | null>(null);
   const [predsByUid, setPredsByUid] = useState<Record<string, PredRow[]>>({});
   const [predsLoadingUid, setPredsLoadingUid] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [buildResult, setBuildResult] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
@@ -159,6 +161,22 @@ export default function AdminPage() {
       setDeleteResult(`❌ ${e instanceof Error ? e.message : "Network error"}`);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function buildProfiles() {
+    setBuilding(true);
+    setBuildResult(null);
+    try {
+      const res = await fetch("/api/build-profiles", { method: "POST", headers: authHeader });
+      const data = await res.json();
+      setBuildResult(res.ok
+        ? `✅ Built ${data.teams} team profiles from ${data.matchesProcessed} matches`
+        : `❌ ${data.error}`);
+    } catch {
+      setBuildResult("❌ Network error");
+    } finally {
+      setBuilding(false);
     }
   }
 
@@ -287,9 +305,17 @@ export default function AdminPage() {
           >
             {scoring ? "Scoring…" : "Score Matches"}
           </button>
+          <button
+            onClick={buildProfiles}
+            disabled={building}
+            className="bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors"
+          >
+            {building ? "Building…" : "Build Prediction Profiles"}
+          </button>
         </div>
         {syncResult && <p className="text-sm">{syncResult}</p>}
         {scoreResult && <p className="text-sm">{scoreResult}</p>}
+        {buildResult && <p className="text-sm">{buildResult}</p>}
       </div>
 
       {/* Delete user */}
