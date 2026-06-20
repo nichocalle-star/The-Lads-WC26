@@ -3,6 +3,7 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { Match, Prediction } from "@/lib/types";
 import { resolveChampion } from "@/lib/bracket";
+import { isWorldCup2026 } from "@/lib/tournament";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -33,7 +34,8 @@ export async function GET() {
     const metricsMap: Record<string, Record<string, unknown>> = {};
     for (const d of metricsSnap.docs) metricsMap[d.id] = d.data();
 
-    const matches = matchesSnap.docs.map((d) => d.data() as Match);
+    // World Cup 2026 only — the bracket/champion must never read other data.
+    const matches = matchesSnap.docs.map((d) => d.data() as Match).filter((m) => isWorldCup2026(m));
 
     // Group every user's predictions into a matchId-keyed map for bracket resolution.
     const predsByUser: Record<string, Record<string, Prediction>> = {};

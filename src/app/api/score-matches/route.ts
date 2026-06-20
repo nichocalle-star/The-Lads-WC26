@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { isWorldCup2026 } from "@/lib/tournament";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -76,15 +77,17 @@ export async function POST(req: NextRequest) {
     await zeroBatch.commit();
   }
 
-  // Get all final matches
+  // Get all final matches — World Cup 2026 only. Scoring must never read any
+  // other tournament's data (see src/lib/tournament.ts).
   const matchSnap = await db.collection("matches").where("status", "==", "final").get();
-  if (matchSnap.empty) {
+  const wcDocs = matchSnap.docs.filter((d) => isWorldCup2026(d.data()));
+  if (wcDocs.length === 0) {
     return NextResponse.json({ ok: true, scored: 0, message: "No final matches found" });
   }
 
-  const finalMatchIds = matchSnap.docs.map((d) => d.id);
+  const finalMatchIds = wcDocs.map((d) => d.id);
   const matchData: Record<string, FirebaseFirestore.DocumentData> = {};
-  for (const d of matchSnap.docs) matchData[d.id] = d.data();
+  for (const d of wcDocs) matchData[d.id] = d.data();
 
   // Score predictions in batches of 30 (Firestore IN query limit)
   const CHUNK = 30;

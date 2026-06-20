@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { WC2026_TOURNAMENT, isWorldCup2026 } from "@/lib/tournament";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -97,12 +98,13 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ ok: true, deleted: snap.size });
 }
 
-// GET — return all matches from Firestore
+// GET — return all matches from Firestore (World Cup 2026 only; this feeds the
+// schedule, predictions, bracket and home — none of which may see other data).
 export async function GET() {
   try {
     const db = getAdminDb();
     const snap = await db.collection("matches").orderBy("kickoffTimeUTC").get();
-    const matches = snap.docs.map((d) => d.data());
+    const matches = snap.docs.map((d) => d.data()).filter((m) => isWorldCup2026(m));
     return NextResponse.json({ matches });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -177,6 +179,7 @@ export async function POST(req: NextRequest) {
       const matchData = {
         matchId: `espn-${event.id}`,
         espnId: event.id,
+        tournament: WC2026_TOURNAMENT,
         homeTeam,
         awayTeam,
         homeTeamLogo: home.team?.logo ?? null,

@@ -3,6 +3,7 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { Match } from "@/lib/types";
 import { TeamProfile, emptyProfile, predictMatch } from "@/lib/prediction";
+import { isWorldCup2026 } from "@/lib/tournament";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -35,7 +36,7 @@ export async function GET() {
     const now = Date.now();
     const upcoming = matchSnap.docs
       .map((d) => d.data() as Match)
-      .filter((m) => m.status !== "final" && m.homeTeam !== "TBD" && m.awayTeam !== "TBD"
+      .filter((m) => isWorldCup2026(m) && m.status !== "final" && m.homeTeam !== "TBD" && m.awayTeam !== "TBD"
         && !m.homeTeam.includes("Winner") && !m.awayTeam.includes("Winner")
         && !/#|Place/.test(m.homeTeam) && !/#|Place/.test(m.awayTeam))
       .sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime());

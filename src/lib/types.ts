@@ -14,6 +14,7 @@ export interface Match {
   awayScore: number | null;
   winner: string | null;
   sofascoreId?: number;
+  tournament?: string; // WC2026_TOURNAMENT for World Cup 2026 matches (see lib/tournament)
   odds?: { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
 }
 
