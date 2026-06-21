@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { isWorldCup2026 } from "@/lib/tournament";
+import { PREDICTIONS_LOCK_UTC } from "@/lib/lock";
+
+// Predictions submitted after the global deadline shouldn't have existed at
+// all (the deadline was meant to seal every pick at once). A bug in an
+// earlier version let some through anyway. Rather than retroactively delete
+// someone's picks, late ones are scored at a steep penalty instead of zero.
+const LATE_SUBMISSION_MULTIPLIER = 0.1;
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -93,6 +100,8 @@ export async function POST(req: NextRequest) {
   const CHUNK = 30;
   const pointsByUser: Record<string, number> = {};
   let totalScored = 0;
+  let lateSubmissions = 0;
+  const deadlineMs = new Date(PREDICTIONS_LOCK_UTC).getTime();
 
   for (let i = 0; i < finalMatchIds.length; i += CHUNK) {
     const chunk = finalMatchIds.slice(i, i + CHUNK);
@@ -104,7 +113,7 @@ export async function POST(req: NextRequest) {
       const match = matchData[pred.matchId];
       if (!match) continue;
 
-      const pts = calcPoints(
+      let pts = calcPoints(
         match.round,
         pred.predictedWinner,
         pred.predictedHomeScore,
@@ -114,17 +123,25 @@ export async function POST(req: NextRequest) {
         match.awayScore
       );
 
-      batch.update(predDoc.ref, { pointsAwarded: pts });
+      const isLate = !!pred.submittedAt && new Date(pred.submittedAt).getTime() > deadlineMs;
+      if (isLate) {
+        pts = Math.round(pts * LATE_SUBMISSION_MULTIPLIER * 10) / 10;
+        lateSubmissions++;
+      }
+
+      batch.update(predDoc.ref, { pointsAwarded: pts, ...(isLate ? { latePenalty: true } : {}) });
       pointsByUser[pred.userId] = (pointsByUser[pred.userId] ?? 0) + pts;
       totalScored++;
     }
     await batch.commit();
   }
 
-  // Update totalPoints on userMetrics (what the leaderboard reads)
+  // Update totalPoints on userMetrics (what the leaderboard reads).
+  // Round off float drift from summing many 0.1-increment penalties.
   const userBatch = db.batch();
-  for (const [uid, pts] of Object.entries(pointsByUser)) {
-    userBatch.set(db.collection("userMetrics").doc(uid), { totalPoints: pts }, { merge: true });
+  for (const uid of Object.keys(pointsByUser)) {
+    pointsByUser[uid] = Math.round(pointsByUser[uid] * 10) / 10;
+    userBatch.set(db.collection("userMetrics").doc(uid), { totalPoints: pointsByUser[uid] }, { merge: true });
   }
   await userBatch.commit();
 
@@ -133,6 +150,7 @@ export async function POST(req: NextRequest) {
     scored: totalScored,
     finalMatches: finalMatchIds.length,
     users: Object.keys(pointsByUser).length,
+    lateSubmissions,
     breakdown: pointsByUser,
   });
 }
