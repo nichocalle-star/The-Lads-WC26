@@ -5,7 +5,7 @@ import { getAuth } from "firebase-admin/auth";
 import { syncMatchesCore, scoreMatchesCore } from "@/lib/syncAndScore";
 
 export const runtime = "nodejs";
-export const maxDuration = 45;
+export const maxDuration = 60;
 
 function getAdmin() {
   if (!getApps().length) {
@@ -38,7 +38,17 @@ export async function GET() {
 // POST — sync matches from ESPN, then rescore everyone. Any signed-in lad can
 // trigger this (not gated by the admin secret) — verified via Firebase ID
 // token like the other user-facing write routes.
+//
+// Split into two phases (?step=sync, then ?step=score), each its own request/
+// serverless invocation with a full fresh time budget. Running both in a
+// single request risked exceeding the platform's execution timeout, which
+// surfaces to the client as an unparseable response ("Network error").
 export async function POST(req: NextRequest) {
+  const step = req.nextUrl.searchParams.get("step");
+  if (step !== "sync" && step !== "score") {
+    return NextResponse.json({ error: "step must be 'sync' or 'score'" }, { status: 400 });
+  }
+
   try {
     const { db, auth } = getAdmin();
 
@@ -46,11 +56,16 @@ export async function POST(req: NextRequest) {
     if (!idToken) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const decoded = await auth.verifyIdToken(idToken);
 
-    const [userDoc, syncResult] = await Promise.all([
+    if (step === "sync") {
+      const { synced } = await syncMatchesCore(db);
+      return NextResponse.json({ ok: true, synced });
+    }
+
+    // step === "score"
+    const [userDoc, scoreResult] = await Promise.all([
       db.collection("users").doc(decoded.uid).get(),
-      syncMatchesCore(db),
+      scoreMatchesCore(db),
     ]);
-    const scoreResult = await scoreMatchesCore(db);
 
     const lastRefreshedAt = new Date().toISOString();
     const lastRefreshedBy = (userDoc.data()?.username as string) ?? "someone";
@@ -60,13 +75,13 @@ export async function POST(req: NextRequest) {
       ok: true,
       lastRefreshedAt,
       lastRefreshedBy,
-      synced: syncResult.synced,
       scored: scoreResult.scored,
       finalMatches: scoreResult.finalMatches,
+      users: scoreResult.users,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("refresh error:", err);
+    console.error(`refresh (${step}) error:`, err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

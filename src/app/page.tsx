@@ -39,19 +39,30 @@ function RefreshBar({ onRefreshed }: { onRefreshed: () => void }) {
       .catch(() => setMeta({ lastRefreshedAt: null }));
   }, []);
 
+  // Two separate requests (separate serverless invocations), not one
+  // request doing both — keeps each comfortably inside the platform's
+  // execution time budget instead of risking a timeout on the combined work.
+  async function postPhase(token: string, step: "sync" | "score") {
+    const res = await fetch(`/api/refresh?step=${step}`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    const text = await res.text();
+    let data: Record<string, unknown> = {};
+    try { data = JSON.parse(text); } catch { /* non-JSON response, e.g. a timeout/crash page */ }
+    if (!res.ok) throw new Error((data.error as string) || `${step} failed (${res.status})`);
+    return data;
+  }
+
   async function handleRefresh() {
     if (!firebaseUser || refreshing) return;
     setRefreshing(true);
     setError(null);
     try {
       const token = await firebaseUser.getIdToken();
-      const res = await fetch("/api/refresh", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Refresh failed"); return; }
-      setMeta({ lastRefreshedAt: data.lastRefreshedAt, lastRefreshedBy: data.lastRefreshedBy });
+      await postPhase(token, "sync");
+      const scoreData = await postPhase(token, "score");
+      setMeta({ lastRefreshedAt: scoreData.lastRefreshedAt as string, lastRefreshedBy: scoreData.lastRefreshedBy as string });
       onRefreshed();
-    } catch {
-      setError("Network error");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
     } finally {
       setRefreshing(false);
     }
