@@ -65,4 +65,5 @@ export interface User {
   createdAt: string;
   rootingFor?: string;
   hatingOn?: string;
+  championPick?: string; // cached resolved champion (predictions are locked, so it's frozen)
 }

@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { Match, Prediction } from "@/lib/types";
-import { resolveChampion } from "@/lib/bracket";
-import { isWorldCup2026 } from "@/lib/tournament";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -21,35 +18,27 @@ function getAdminDb() {
   return getFirestore();
 }
 
+// Reads only the two small collections it needs (users + userMetrics, ~10 docs
+// each). The predicted champion is stored on each user doc (predictions are
+// locked, so it never changes) rather than recomputed from the entire
+// predictions collection on every page load — that scan was the single biggest
+// Firestore read cost in the app.
 export async function GET() {
   try {
     const db = getAdminDb();
-    const [metricsSnap, usersSnap, matchesSnap, predsSnap] = await Promise.all([
+    const [metricsSnap, usersSnap] = await Promise.all([
       db.collection("userMetrics").get(),
       db.collection("users").get(),
-      db.collection("matches").get(),
-      db.collection("predictions").get(),
     ]);
 
     const metricsMap: Record<string, Record<string, unknown>> = {};
     for (const d of metricsSnap.docs) metricsMap[d.id] = d.data();
-
-    // World Cup 2026 only — the bracket/champion must never read other data.
-    const matches = matchesSnap.docs.map((d) => d.data() as Match).filter((m) => isWorldCup2026(m));
-
-    // Group every user's predictions into a matchId-keyed map for bracket resolution.
-    const predsByUser: Record<string, Record<string, Prediction>> = {};
-    for (const d of predsSnap.docs) {
-      const p = d.data() as Prediction;
-      (predsByUser[p.userId] ??= {})[p.matchId] = p;
-    }
 
     const leaderboard = usersSnap.docs
       .map((d) => {
         const user = d.data();
         if (!user.username) return null;
         const metrics = metricsMap[d.id] ?? {};
-        const champion = resolveChampion(matches, predsByUser[d.id] ?? {});
         return {
           userId: d.id,
           displayName: user.username as string,
@@ -60,7 +49,7 @@ export async function GET() {
           predictionAccuracy: (metrics.predictionAccuracy as number) ?? 0,
           rootingFor: (user.rootingFor as string) ?? null,
           hatingOn: (user.hatingOn as string) ?? null,
-          championPick: champion,
+          championPick: (user.championPick as string) ?? null,
         };
       })
       .filter(Boolean)

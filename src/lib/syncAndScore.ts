@@ -4,6 +4,8 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { WC2026_TOURNAMENT, isWorldCup2026 } from "./tournament";
 import { PREDICTIONS_LOCK_UTC } from "./lock";
+import { resolveChampion } from "./bracket";
+import type { Match, Prediction } from "./types";
 
 const ESPN_WC = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
 
@@ -164,41 +166,49 @@ function calcPoints(
 }
 
 export interface ScoreResult {
-  scored: number;
-  finalMatches: number;
-  users: number;
+  scored: number;        // predictions (re)scored this run
+  finalMatches: number;  // total final WC matches
+  newlyScored: number;   // matches that actually needed scoring this run
+  users: number;         // users whose total changed
   lateSubmissions: number;
-  breakdown: Record<string, number>;
+  deltas: Record<string, number>;
 }
 
-export async function scoreMatchesCore(db: Firestore): Promise<ScoreResult> {
-  // Zero out all user points first (full recalculation every run)
-  const allUsersSnap = await db.collection("userMetrics").get();
-  if (!allUsersSnap.empty) {
-    const zeroBatch = db.batch();
-    for (const d of allUsersSnap.docs) zeroBatch.update(d.ref, { totalPoints: 0 });
-    await zeroBatch.commit();
-  }
+// Marker stored on a match doc recording the result it was last scored against.
+// A match only needs (re)scoring when this doesn't match its current result.
+function resultKey(m: FirebaseFirestore.DocumentData): string {
+  return `${m.homeScore}-${m.awayScore}-${m.winner ?? ""}`;
+}
 
+// Incremental scoring: only touches matches whose final result hasn't been
+// scored yet (or changed since), and adjusts each user's total by the delta
+// rather than zeroing and recomputing every prediction from scratch. A match
+// already scored at its current result is skipped entirely — no prediction
+// reads, no writes — so a refresh on a day with a couple of new results costs
+// a few dozen reads instead of scanning the whole predictions collection.
+export async function scoreMatchesCore(db: Firestore): Promise<ScoreResult> {
   // World Cup 2026 only — scoring must never read any other tournament's data.
   const matchSnap = await db.collection("matches").where("status", "==", "final").get();
   const wcDocs = matchSnap.docs.filter((d) => isWorldCup2026(d.data()));
-  if (wcDocs.length === 0) {
-    return { scored: 0, finalMatches: 0, users: 0, lateSubmissions: 0, breakdown: {} };
+
+  // Only matches whose current result hasn't been scored yet.
+  const toScore = wcDocs.filter((d) => d.data().lastScoredResult !== resultKey(d.data()));
+  if (toScore.length === 0) {
+    return { scored: 0, finalMatches: wcDocs.length, newlyScored: 0, users: 0, lateSubmissions: 0, deltas: {} };
   }
 
-  const finalMatchIds = wcDocs.map((d) => d.id);
   const matchData: Record<string, FirebaseFirestore.DocumentData> = {};
-  for (const d of wcDocs) matchData[d.id] = d.data();
+  for (const d of toScore) matchData[d.id] = d.data();
+  const ids = toScore.map((d) => d.id);
 
   const CHUNK = 30;
-  const pointsByUser: Record<string, number> = {};
+  const userDelta: Record<string, number> = {};
   let totalScored = 0;
   let lateSubmissions = 0;
   const deadlineMs = new Date(PREDICTIONS_LOCK_UTC).getTime();
 
-  for (let i = 0; i < finalMatchIds.length; i += CHUNK) {
-    const chunk = finalMatchIds.slice(i, i + CHUNK);
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
     const predSnap = await db.collection("predictions").where("matchId", "in", chunk).get();
 
     const batch = db.batch();
@@ -223,25 +233,121 @@ export async function scoreMatchesCore(db: Firestore): Promise<ScoreResult> {
         lateSubmissions++;
       }
 
-      batch.update(predDoc.ref, { pointsAwarded: pts, ...(isLate ? { latePenalty: true } : {}) });
-      pointsByUser[pred.userId] = (pointsByUser[pred.userId] ?? 0) + pts;
+      const prev = (pred.pointsAwarded as number) ?? 0;
+      const delta = pts - prev;
+      // Only write the prediction if its points actually changed.
+      if (delta !== 0 || pred.pointsAwarded === undefined) {
+        batch.update(predDoc.ref, { pointsAwarded: pts, ...(isLate ? { latePenalty: true } : {}) });
+      }
+      userDelta[pred.userId] = (userDelta[pred.userId] ?? 0) + delta;
       totalScored++;
+    }
+
+    // Mark every match in this chunk as scored at its current result (even
+    // ones with no predictions) so they're skipped on future runs.
+    for (const id of chunk) {
+      batch.update(db.collection("matches").doc(id), { lastScoredResult: resultKey(matchData[id]) });
     }
     await batch.commit();
   }
 
-  const userBatch = db.batch();
-  for (const uid of Object.keys(pointsByUser)) {
-    pointsByUser[uid] = Math.round(pointsByUser[uid] * 10) / 10;
-    userBatch.set(db.collection("userMetrics").doc(uid), { totalPoints: pointsByUser[uid] }, { merge: true });
+  // Apply the accumulated deltas to userMetrics totals (read only the affected
+  // users, add, round to kill float drift, write).
+  const affected = Object.keys(userDelta).filter((uid) => Math.abs(userDelta[uid]) > 1e-9);
+  const deltas: Record<string, number> = {};
+  if (affected.length > 0) {
+    const refs = affected.map((uid) => db.collection("userMetrics").doc(uid));
+    const snaps = await db.getAll(...refs);
+    const batch = db.batch();
+    for (let i = 0; i < affected.length; i++) {
+      const uid = affected[i];
+      const cur = snaps[i].exists ? ((snaps[i].data()!.totalPoints as number) ?? 0) : 0;
+      const next = Math.round((cur + userDelta[uid]) * 10) / 10;
+      batch.set(db.collection("userMetrics").doc(uid), { userId: uid, totalPoints: next }, { merge: true });
+      deltas[uid] = Math.round(userDelta[uid] * 10) / 10;
+    }
+    await batch.commit();
   }
-  await userBatch.commit();
 
   return {
     scored: totalScored,
-    finalMatches: finalMatchIds.length,
-    users: Object.keys(pointsByUser).length,
+    finalMatches: wcDocs.length,
+    newlyScored: toScore.length,
+    users: affected.length,
     lateSubmissions,
-    breakdown: pointsByUser,
+    deltas,
   };
+}
+
+// One-time migration into the optimized steady state. Reads matches +
+// predictions ONCE and:
+//   1. caches each user's resolved champion on their user doc (championPick),
+//   2. fully (re)scores every final match — absolute totals, so it self-heals
+//      any matches that finished during the quota outage and were never scored,
+//   3. stamps lastScoredResult on every final match so subsequent scoreMatches
+//      runs are incremental.
+// After this runs, the leaderboard reads ~20 docs and refreshes are cheap.
+export async function migrateOptimize(db: Firestore): Promise<{ users: number; champions: number; finalMatches: number; scored: number }> {
+  const [usersSnap, matchSnap, predSnap] = await Promise.all([
+    db.collection("users").get(),
+    db.collection("matches").get(),
+    db.collection("predictions").get(),
+  ]);
+
+  const matches = matchSnap.docs.map((d) => d.data() as Match).filter((m) => isWorldCup2026(m));
+  const matchById: Record<string, Match> = {};
+  for (const m of matches) matchById[m.matchId] = m;
+
+  const predsByUser: Record<string, Record<string, Prediction>> = {};
+  const allPreds: { ref: FirebaseFirestore.DocumentReference; pred: Prediction }[] = [];
+  for (const d of predSnap.docs) {
+    const p = d.data() as Prediction;
+    (predsByUser[p.userId] ??= {})[p.matchId] = p;
+    allPreds.push({ ref: d.ref, pred: p });
+  }
+
+  const deadlineMs = new Date(PREDICTIONS_LOCK_UTC).getTime();
+  const finals = matches.filter((m) => m.status === "final" && m.homeScore != null && m.awayScore != null);
+  const finalIds = new Set(finals.map((m) => m.matchId));
+  const pointsByUser: Record<string, number> = {};
+
+  // Helper to commit large batches in chunks (Firestore limit 500 writes).
+  const writes: { ref: FirebaseFirestore.DocumentReference; data: FirebaseFirestore.DocumentData }[] = [];
+
+  // 1. champion cache per user
+  let champions = 0;
+  for (const d of usersSnap.docs) {
+    const champ = resolveChampion(matches, predsByUser[d.id] ?? {});
+    if (champ) champions++;
+    writes.push({ ref: d.ref, data: { championPick: champ ?? null } });
+  }
+
+  // 2. full (re)score of final-match predictions
+  for (const { ref, pred } of allPreds) {
+    if (!finalIds.has(pred.matchId)) continue;
+    const match = matchById[pred.matchId];
+    let pts = calcPoints(match.round, pred.predictedWinner, pred.predictedHomeScore, pred.predictedAwayScore,
+      match.winner as string, match.homeScore, match.awayScore);
+    const isLate = !!pred.submittedAt && new Date(pred.submittedAt).getTime() > deadlineMs;
+    if (isLate) pts = Math.round(pts * LATE_SUBMISSION_MULTIPLIER * 10) / 10;
+    writes.push({ ref, data: { pointsAwarded: pts, ...(isLate ? { latePenalty: true } : {}) } });
+    pointsByUser[pred.userId] = (pointsByUser[pred.userId] ?? 0) + pts;
+  }
+
+  // 3. absolute totals + match markers
+  for (const m of finals) {
+    writes.push({ ref: db.collection("matches").doc(m.matchId), data: { lastScoredResult: resultKey(m) } });
+  }
+  for (const d of usersSnap.docs) {
+    const total = Math.round((pointsByUser[d.id] ?? 0) * 10) / 10;
+    writes.push({ ref: db.collection("userMetrics").doc(d.id), data: { userId: d.id, totalPoints: total } });
+  }
+
+  for (let i = 0; i < writes.length; i += 450) {
+    const batch = db.batch();
+    for (const w of writes.slice(i, i + 450)) batch.set(w.ref, w.data, { merge: true });
+    await batch.commit();
+  }
+
+  return { users: usersSnap.size, champions, finalMatches: finals.length, scored: allPreds.filter((p) => finalIds.has(p.pred.matchId)).length };
 }
