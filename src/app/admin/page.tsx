@@ -34,10 +34,9 @@ export default function AdminPage() {
   const router = useRouter();
   const [adminSecret, setAdminSecret] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
-  const [scoring, setScoring] = useState(false);
-  const [scoreResult, setScoreResult] = useState<string | null>(null);
+  const [refreshingData, setRefreshingData] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<string | null>(null);
   const [players, setPlayers] = useState<PlayerRow[] | null>(null);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [lockTeam, setLockTeam] = useState("Mexico");
@@ -92,20 +91,6 @@ export default function AdminPage() {
       setSyncResult("❌ Network error");
     } finally {
       setPlayersLoading(false);
-    }
-  }
-
-  async function syncMatches() {
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const res = await fetch("/api/sync-matches", { method: "POST", headers: authHeader });
-      const data = await res.json();
-      setSyncResult(res.ok ? `✅ Synced ${data.synced} matches` : `❌ ${data.error}`);
-    } catch {
-      setSyncResult("❌ Network error");
-    } finally {
-      setSyncing(false);
     }
   }
 
@@ -180,24 +165,25 @@ export default function AdminPage() {
     }
   }
 
-  async function scoreMatches() {
-    setScoring(true);
-    setScoreResult(null);
+  async function syncAndScore() {
+    setRefreshingData(true);
+    setRefreshResult(null);
     try {
-      const res = await fetch("/api/score-matches", { method: "POST", headers: authHeader });
-      const data = await res.json();
-      if (res.ok) {
-        setScoreResult(`✅ Scored ${data.scored} predictions across ${data.users} players`);
-        // Refresh player list
-        const r2 = await fetch("/api/admin/users", { headers: authHeader });
-        if (r2.ok) setPlayers((await r2.json()).users);
-      } else {
-        setScoreResult(`❌ ${data.error}`);
-      }
+      const syncRes = await fetch("/api/sync-matches", { method: "POST", headers: authHeader });
+      const syncData = await syncRes.json();
+      if (!syncRes.ok) { setRefreshResult(`❌ Sync failed: ${syncData.error}`); return; }
+
+      const scoreRes = await fetch("/api/score-matches", { method: "POST", headers: authHeader });
+      const scoreData = await scoreRes.json();
+      if (!scoreRes.ok) { setRefreshResult(`❌ Scoring failed: ${scoreData.error}`); return; }
+
+      setRefreshResult(`✅ Synced ${syncData.synced} matches · scored ${scoreData.scored} predictions across ${scoreData.users} players`);
+      const r2 = await fetch("/api/admin/users", { headers: authHeader });
+      if (r2.ok) setPlayers((await r2.json()).users);
     } catch {
-      setScoreResult("❌ Network error");
+      setRefreshResult("❌ Network error");
     } finally {
-      setScoring(false);
+      setRefreshingData(false);
     }
   }
 
@@ -292,18 +278,11 @@ export default function AdminPage() {
         <h2 className="text-lg font-semibold">Actions</h2>
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={syncMatches}
-            disabled={syncing}
-            className="bg-blue-700 hover:bg-blue-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors"
-          >
-            {syncing ? "Syncing…" : "Sync Matches"}
-          </button>
-          <button
-            onClick={scoreMatches}
-            disabled={scoring}
+            onClick={syncAndScore}
+            disabled={refreshingData}
             className="bg-green-700 hover:bg-green-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors"
           >
-            {scoring ? "Scoring…" : "Score Matches"}
+            {refreshingData ? "Refreshing…" : "🔄 Sync & Score"}
           </button>
           <button
             onClick={buildProfiles}
@@ -313,8 +292,7 @@ export default function AdminPage() {
             {building ? "Building…" : "Build Prediction Profiles"}
           </button>
         </div>
-        {syncResult && <p className="text-sm">{syncResult}</p>}
-        {scoreResult && <p className="text-sm">{scoreResult}</p>}
+        {refreshResult && <p className="text-sm">{refreshResult}</p>}
         {buildResult && <p className="text-sm">{buildResult}</p>}
       </div>
 

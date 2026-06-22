@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Match, Prediction } from "@/lib/types";
@@ -11,6 +11,75 @@ import { MatchCard } from "@/components/MatchCard";
 import { PREDICTIONS_LOCK_UTC } from "@/lib/lock";
 
 const TZ = "America/New_York";
+
+function timeAgo(iso: string | null | undefined): string {
+  if (!iso) return "never";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (diffMs < 0 || diffMs < 60000) return "just now";
+  const min = Math.floor(diffMs / 60000);
+  if (min < 60) return `${min} min${min === 1 ? "" : "s"} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
+  const day = Math.floor(hr / 24);
+  return `${day} day${day === 1 ? "" : "s"} ago`;
+}
+
+interface RefreshMeta { lastRefreshedAt: string | null; lastRefreshedBy?: string }
+
+function RefreshBar({ onRefreshed }: { onRefreshed: () => void }) {
+  const { firebaseUser } = useAuth();
+  const [meta, setMeta] = useState<RefreshMeta | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/refresh")
+      .then((r) => r.json())
+      .then(setMeta)
+      .catch(() => setMeta({ lastRefreshedAt: null }));
+  }, []);
+
+  async function handleRefresh() {
+    if (!firebaseUser || refreshing) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const token = await firebaseUser.getIdToken();
+      const res = await fetch("/api/refresh", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Refresh failed"); return; }
+      setMeta({ lastRefreshedAt: data.lastRefreshedAt, lastRefreshedBy: data.lastRefreshedBy });
+      onRefreshed();
+    } catch {
+      setError("Network error");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  return (
+    <div className="bg-[#0b1d12] border border-[#1d3a28] rounded-xl px-4 py-2.5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-[11px] text-[#6fae87]">
+          {meta ? (
+            <>
+              Last refreshed <span className="text-[#9ec9ad]">{timeAgo(meta.lastRefreshedAt)}</span>
+              {meta.lastRefreshedBy ? <> by {meta.lastRefreshedBy}</> : ""}
+            </>
+          ) : "Loading…"}
+        </p>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="text-xs bg-[#10301c] hover:bg-[#143b24] disabled:opacity-50 text-[#2bd97a] border border-[#1d3a28] rounded-lg px-3 py-1.5 transition-colors shrink-0"
+        >
+          {refreshing ? "Refreshing…" : "🔄 Refresh scores"}
+        </button>
+      </div>
+      {error && <p className="text-[11px] text-red-400 mt-1.5">{error}</p>}
+    </div>
+  );
+}
 
 const LOCK_LABEL = new Date(PREDICTIONS_LOCK_UTC).toLocaleString("en-US", {
   weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: TZ,
@@ -274,7 +343,7 @@ export default function Home() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [myPreds, setMyPreds] = useState<Record<string, Prediction>>({});
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     fetch("/api/leaderboard")
       .then((r) => r.json())
       .then((d) => setEntries(d.leaderboard ?? []))
@@ -284,6 +353,8 @@ export default function Home() {
       .then((d) => setMatches(d.matches ?? []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
     if (!user) return;
@@ -365,6 +436,8 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      <RefreshBar onRefreshed={loadData} />
 
       <CountdownBanner />
 
