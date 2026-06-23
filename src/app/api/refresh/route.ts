@@ -35,20 +35,27 @@ export async function GET() {
   }
 }
 
-// POST — sync matches from ESPN, then rescore everyone. Any signed-in lad can
-// trigger this (not gated by the admin secret) — verified via Firebase ID
-// token like the other user-facing write routes.
+// POST — sync matches from ESPN and rescore everyone. Any signed-in lad can
+// trigger this (verified via Firebase ID token, like the other user-facing
+// write routes — not the admin secret).
 //
-// Split into two phases (?step=sync, then ?step=score), each its own request/
-// serverless invocation with a full fresh time budget. Running both in a
-// single request risked exceeding the platform's execution timeout, which
-// surfaces to the client as an unparseable response ("Network error").
+// Backward-compatible by design:
+//   • ?step=sync  → just sync (used by the current two-phase client)
+//   • ?step=score → just score + stamp the timestamp
+//   • no step     → do BOTH in one request (what the old cached client calls)
+// The original reason for splitting was that the old full-recalc scoring was
+// slow enough to risk a timeout; scoring is incremental now, so sync+score
+// together runs in a few seconds and the single-call path is safe again. This
+// means a stale browser tab still on the old client keeps working instead of
+// erroring with "network error".
+async function stampRefresh(db: FirebaseFirestore.Firestore, username: string) {
+  const lastRefreshedAt = new Date().toISOString();
+  await db.collection("meta").doc(META_DOC).set({ lastRefreshedAt, lastRefreshedBy: username }, { merge: true });
+  return lastRefreshedAt;
+}
+
 export async function POST(req: NextRequest) {
   const step = req.nextUrl.searchParams.get("step");
-  if (step !== "sync" && step !== "score") {
-    return NextResponse.json({ error: "step must be 'sync' or 'score'" }, { status: 400 });
-  }
-
   try {
     const { db, auth } = getAdmin();
 
@@ -61,27 +68,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, synced });
     }
 
-    // step === "score"
-    const [userDoc, scoreResult] = await Promise.all([
-      db.collection("users").doc(decoded.uid).get(),
-      scoreMatchesCore(db),
-    ]);
+    // step === "score" OR legacy no-step (do everything needed).
+    const username = ((await db.collection("users").doc(decoded.uid).get()).data()?.username as string) ?? "someone";
 
-    const lastRefreshedAt = new Date().toISOString();
-    const lastRefreshedBy = (userDoc.data()?.username as string) ?? "someone";
-    await db.collection("meta").doc(META_DOC).set({ lastRefreshedAt, lastRefreshedBy }, { merge: true });
+    if (step !== "score") {
+      // Legacy single-call path: sync first, then score.
+      await syncMatchesCore(db);
+    }
+    const scoreResult = await scoreMatchesCore(db);
+    const lastRefreshedAt = await stampRefresh(db, username);
 
     return NextResponse.json({
       ok: true,
       lastRefreshedAt,
-      lastRefreshedBy,
+      lastRefreshedBy: username,
       scored: scoreResult.scored,
       finalMatches: scoreResult.finalMatches,
       users: scoreResult.users,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error(`refresh (${step}) error:`, err);
+    console.error(`refresh (${step ?? "all"}) error:`, err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
