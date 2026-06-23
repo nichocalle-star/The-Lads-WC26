@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
 import { syncMatchesCore, scoreMatchesCore } from "@/lib/syncAndScore";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-function getAdmin() {
+function getAdminDb() {
   if (!getApps().length) {
     initializeApp({
       credential: cert({
@@ -17,16 +16,36 @@ function getAdmin() {
       }),
     });
   }
-  return { db: getFirestore(), auth: getAuth() };
+  return getFirestore();
+}
+
+// Verify a Firebase ID token WITHOUT firebase-admin/auth. That submodule fails
+// to load on Vercel (its dynamic crypto/JWT requires don't survive bundling /
+// file-tracing), which 500'd this route. Google's REST endpoint does the same
+// verification over plain fetch — returns the account if the token is valid.
+async function verifyIdToken(idToken: string): Promise<{ uid: string } | null> {
+  const key = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  try {
+    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${key}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const uid = data?.users?.[0]?.localId;
+    return uid ? { uid } : null;
+  } catch {
+    return null;
+  }
 }
 
 const META_DOC = "refresh";
 
-// GET — read the last-refresh timestamp without doing any work. Public to any
-// signed-in user, used to render "Last refreshed: ..." on page load.
+// GET — read the last-refresh timestamp without doing any work.
 export async function GET() {
   try {
-    const { db } = getAdmin();
+    const db = getAdminDb();
     const snap = await db.collection("meta").doc(META_DOC).get();
     return NextResponse.json(snap.exists ? snap.data() : { lastRefreshedAt: null });
   } catch (err: unknown) {
@@ -36,32 +55,17 @@ export async function GET() {
 }
 
 // POST — sync matches from ESPN and rescore everyone. Any signed-in lad can
-// trigger this (verified via Firebase ID token, like the other user-facing
-// write routes — not the admin secret).
-//
-// Backward-compatible by design:
-//   • ?step=sync  → just sync (used by the current two-phase client)
-//   • ?step=score → just score + stamp the timestamp
-//   • no step     → do BOTH in one request (what the old cached client calls)
-// The original reason for splitting was that the old full-recalc scoring was
-// slow enough to risk a timeout; scoring is incremental now, so sync+score
-// together runs in a few seconds and the single-call path is safe again. This
-// means a stale browser tab still on the old client keeps working instead of
-// erroring with "network error".
-async function stampRefresh(db: FirebaseFirestore.Firestore, username: string) {
-  const lastRefreshedAt = new Date().toISOString();
-  await db.collection("meta").doc(META_DOC).set({ lastRefreshedAt, lastRefreshedBy: username }, { merge: true });
-  return lastRefreshedAt;
-}
-
+// trigger this. Backward-compatible with the old single-call client:
+//   ?step=sync → just sync · ?step=score → just score · no step → both.
 export async function POST(req: NextRequest) {
   const step = req.nextUrl.searchParams.get("step");
   try {
-    const { db, auth } = getAdmin();
-
     const idToken = req.headers.get("authorization")?.replace("Bearer ", "");
     if (!idToken) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const decoded = await auth.verifyIdToken(idToken);
+    const verified = await verifyIdToken(idToken);
+    if (!verified) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const db = getAdminDb();
 
     if (step === "sync") {
       const { synced } = await syncMatchesCore(db);
@@ -69,14 +73,12 @@ export async function POST(req: NextRequest) {
     }
 
     // step === "score" OR legacy no-step (do everything needed).
-    const username = ((await db.collection("users").doc(decoded.uid).get()).data()?.username as string) ?? "someone";
-
-    if (step !== "score") {
-      // Legacy single-call path: sync first, then score.
-      await syncMatchesCore(db);
-    }
+    const username = ((await db.collection("users").doc(verified.uid).get()).data()?.username as string) ?? "someone";
+    if (step !== "score") await syncMatchesCore(db);
     const scoreResult = await scoreMatchesCore(db);
-    const lastRefreshedAt = await stampRefresh(db, username);
+
+    const lastRefreshedAt = new Date().toISOString();
+    await db.collection("meta").doc(META_DOC).set({ lastRefreshedAt, lastRefreshedBy: username }, { merge: true });
 
     return NextResponse.json({
       ok: true,
