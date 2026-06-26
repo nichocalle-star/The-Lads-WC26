@@ -66,4 +66,5 @@ export interface User {
   rootingFor?: string;
   hatingOn?: string;
   championPick?: string; // cached resolved champion (predictions are locked, so it's frozen)
+  scoringAckAt?: string; // when the user acknowledged the knockout-scoring notice
 }

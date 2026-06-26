@@ -4,7 +4,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { WC2026_TOURNAMENT, isWorldCup2026 } from "./tournament";
 import { PREDICTIONS_LOCK_UTC } from "./lock";
-import { resolveChampion } from "./bracket";
+import { resolveChampion, buildStandings, resolveSlot, BRACKET_MAP } from "./bracket";
 import type { Match, Prediction } from "./types";
 
 const ESPN_WC = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
@@ -350,4 +350,62 @@ export async function migrateOptimize(db: Firestore): Promise<{ users: number; c
   }
 
   return { users: usersSnap.size, champions, finalMatches: finals.length, scored: allPreds.filter((p) => finalIds.has(p.pred.matchId)).length };
+}
+
+// Correction: knockout predictions were saved with predictedWinner resolved
+// against EMPTY group standings, so many landed as placeholders ("Group B #2")
+// instead of the real team the player picked. Those can never match a real
+// winner, silently scoring 0 on the winner half. This recomputes each knockout
+// prediction's winner from the player's OWN bracket (their real predicted
+// standings) and rewrites it to the actual team name. Group-stage predictions
+// (no bracket slot) are left untouched — their teams were always real.
+export async function correctKnockoutWinners(db: Firestore): Promise<{ scanned: number; fixed: number; sample: string[] }> {
+  const [matchSnap, predSnap] = await Promise.all([
+    db.collection("matches").get(),
+    db.collection("predictions").get(),
+  ]);
+  const matches = matchSnap.docs.map((d) => d.data() as Match).filter((m) => isWorldCup2026(m));
+
+  const predsByUser: Record<string, Record<string, Prediction>> = {};
+  const refByKey: Record<string, FirebaseFirestore.DocumentReference> = {};
+  for (const d of predSnap.docs) {
+    const p = d.data() as Prediction;
+    (predsByUser[p.userId] ??= {})[p.matchId] = p;
+    refByKey[`${p.userId}|${p.matchId}`] = d.ref;
+  }
+
+  const writes: { ref: FirebaseFirestore.DocumentReference; winner: string }[] = [];
+  let scanned = 0;
+  const sample: string[] = [];
+
+  for (const [uid, preds] of Object.entries(predsByUser)) {
+    const { standings, thirdPlace } = buildStandings(matches, preds);
+    for (const [matchId, p] of Object.entries(preds)) {
+      const slots = BRACKET_MAP[matchId];
+      if (!slots) continue; // group stage — real teams already
+      scanned++;
+
+      const home = resolveSlot(slots.home, standings, thirdPlace, preds);
+      const away = resolveSlot(slots.away, standings, thirdPlace, preds);
+      const hs = p.predictedHomeScore;
+      const as_ = p.predictedAwayScore;
+
+      let winner: string;
+      if (hs != null && as_ != null && hs !== as_) winner = hs > as_ ? home : away;
+      else winner = "draw"; // drawn/blank knockout pick — genuinely no winner
+
+      if (winner && winner !== p.predictedWinner) {
+        writes.push({ ref: refByKey[`${uid}|${matchId}`], winner });
+        if (sample.length < 6) sample.push(`${p.predictedWinner} → ${winner}`);
+      }
+    }
+  }
+
+  for (let i = 0; i < writes.length; i += 450) {
+    const batch = db.batch();
+    for (const w of writes.slice(i, i + 450)) batch.update(w.ref, { predictedWinner: w.winner });
+    await batch.commit();
+  }
+
+  return { scanned, fixed: writes.length, sample };
 }

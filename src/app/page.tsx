@@ -8,6 +8,7 @@ import { db } from "@/lib/firebase";
 import { Match, Prediction } from "@/lib/types";
 import { flagOf } from "@/lib/teams";
 import { MatchCard } from "@/components/MatchCard";
+import ScoringAnnouncement from "@/components/ScoringAnnouncement";
 import { PREDICTIONS_LOCK_UTC } from "@/lib/lock";
 
 const TZ = "America/New_York";
@@ -447,6 +448,8 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      <ScoringAnnouncement uid={user.uid} initialAckAt={user.scoringAckAt} />
 
       <RefreshBar onRefreshed={loadData} />
 
