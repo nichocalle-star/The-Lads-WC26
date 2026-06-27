@@ -43,7 +43,10 @@ function mapRound(slugOrName: string): string {
 }
 
 async function fetchAllEspnEvents() {
-  const ranges = ["20260611-20260626", "20260628-20260719"];
+  // One continuous window covering the whole tournament. (The old two-range
+  // split skipped June 27 — the last group-stage matchday — so those 6 games
+  // never synced.)
+  const ranges = ["20260611-20260719"];
   const all = [];
   for (const range of ranges) {
     const res = await fetch(`${ESPN_WC}/scoreboard?dates=${range}&limit=200`, { next: { revalidate: 0 } });
