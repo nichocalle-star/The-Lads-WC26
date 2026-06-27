@@ -9,7 +9,6 @@ import { Match, Prediction } from "@/lib/types";
 import { flagOf } from "@/lib/teams";
 import { MatchCard } from "@/components/MatchCard";
 import ScoringAnnouncement from "@/components/ScoringAnnouncement";
-import { PREDICTIONS_LOCK_UTC } from "@/lib/lock";
 
 const TZ = "America/New_York";
 
@@ -89,67 +88,6 @@ function RefreshBar({ onRefreshed }: { onRefreshed: () => void }) {
         </button>
       </div>
       {error && <p className="text-[11px] text-red-400 mt-1.5">{error}</p>}
-    </div>
-  );
-}
-
-const LOCK_LABEL = new Date(PREDICTIONS_LOCK_UTC).toLocaleString("en-US", {
-  weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: TZ,
-}) + " ET";
-
-function CountdownBanner() {
-  const target = new Date(PREDICTIONS_LOCK_UTC).getTime();
-  const [now, setNow] = useState<number | null>(null);
-
-  useEffect(() => {
-    const tick = () => setNow(Date.now());
-    const raf = requestAnimationFrame(tick); // first paint, scheduled (not sync in-effect)
-    const id = setInterval(tick, 1000);
-    return () => { cancelAnimationFrame(raf); clearInterval(id); };
-  }, []);
-
-  const diff = now === null ? 0 : Math.max(0, target - now);
-  const closed = now !== null && diff <= 0;
-
-  const days = Math.floor(diff / 86400000);
-  const hours = Math.floor((diff % 86400000) / 3600000);
-  const mins = Math.floor((diff % 3600000) / 60000);
-  const secs = Math.floor((diff % 60000) / 1000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-
-  const cells: { v: string; l: string }[] = [
-    { v: pad(days), l: "Days" },
-    { v: pad(hours), l: "Hrs" },
-    { v: pad(mins), l: "Min" },
-    { v: pad(secs), l: "Sec" },
-  ];
-
-  if (closed) {
-    return (
-      <div className="bg-[#1d0b0b] border border-[#5c2a2a] rounded-xl px-5 py-4 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-[11px] text-[#d98a8a] uppercase tracking-[0.2em]">🔒 Predictions closed</p>
-          <p className="text-[11px] text-[#a36f6f] mt-1">Locked {LOCK_LABEL}</p>
-        </div>
-        <p className="text-sm text-[#d98a8a] font-medium">All picks are final</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-[#0b1d12] border border-[#2a5c3d] rounded-xl px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
-      <div>
-        <p className="text-[11px] text-[#7fd4a3] uppercase tracking-[0.2em]">⏳ All predictions close in</p>
-        <p className="text-[11px] text-[#6fae87] mt-1">{LOCK_LABEL}</p>
-      </div>
-      <div className="flex gap-2">
-        {cells.map((c) => (
-          <div key={c.l} className="bg-[#10301c] border border-[#1d3a28] rounded-lg px-3 py-1.5 text-center min-w-[52px]">
-            <span className="block text-xl font-semibold text-[#2bd97a] tabular-nums">{now === null ? "––" : c.v}</span>
-            <span className="text-[9px] text-[#6fae87] uppercase tracking-widest">{c.l}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -404,11 +342,14 @@ export default function Home() {
     .sort((a, b) => new Date(a.lockTimeUTC ?? a.kickoffTimeUTC).getTime() - new Date(b.lockTimeUTC ?? b.kickoffTimeUTC).getTime());
   const nextLock = upcoming[0] ?? null;
 
-  // The next game to be played (live or soonest upcoming) — shown with its
-  // picks reveal, which only unlocks once the match has locked.
-  const nextGame = matches
+  // The next game(s) to be played — the soonest non-final kickoff. If two or
+  // more games kick off at that same time, show them all stacked; otherwise
+  // just the single next game.
+  const nonFinalByKickoff = matches
     .filter((m) => m.status !== "final")
-    .sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime())[0] ?? null;
+    .sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime());
+  const nextKickoff = nonFinalByKickoff[0]?.kickoffTimeUTC ?? null;
+  const nextGames = nextKickoff ? nonFinalByKickoff.filter((m) => m.kickoffTimeUTC === nextKickoff) : [];
 
   const todayKey = now.toLocaleDateString("en-CA", { timeZone: TZ });
   const todayCount = matches.filter((m) => new Date(m.kickoffTimeUTC).toLocaleDateString("en-CA", { timeZone: TZ }) === todayKey).length;
@@ -453,14 +394,14 @@ export default function Home() {
 
       <RefreshBar onRefreshed={loadData} />
 
-      <CountdownBanner />
-
-      {nextGame && (
+      {nextGames.length > 0 && (
         <div>
           <p className="text-[11px] text-[#6fae87] uppercase tracking-[0.2em] mb-2">
-            {nextGame.status === "live" ? "Live now" : "Next up"}
+            {nextGames[0].status === "live" ? "Live now" : "Next up"}
           </p>
-          <MatchCard match={nextGame} />
+          <div className="space-y-3">
+            {nextGames.map((g) => <MatchCard key={g.matchId} match={g} />)}
+          </div>
         </div>
       )}
 
