@@ -26,8 +26,12 @@ const TEAM_GROUP: Record<string, string> = {
 };
 
 function mapStatus(espnStatus: string): "upcoming" | "live" | "final" {
-  if (espnStatus === "STATUS_FULL_TIME" || espnStatus === "STATUS_FINAL") return "final";
-  if (espnStatus.includes("IN_PROGRESS") || espnStatus === "STATUS_HALFTIME") return "live";
+  const s = espnStatus ?? "";
+  // Finished: STATUS_FULL_TIME, STATUS_FINAL, and knockout finishes like
+  // STATUS_FINAL_PEN (penalties) and STATUS_FINAL_AET (after extra time).
+  if (s.includes("FULL_TIME") || s.includes("FINAL")) return "final";
+  // In play, including extra time and the shootout itself.
+  if (s.includes("IN_PROGRESS") || s.includes("HALFTIME") || s.includes("EXTRA") || s.includes("SHOOTOUT") || s.includes("OVERTIME")) return "live";
   return "upcoming";
 }
 
@@ -79,7 +83,12 @@ export async function syncMatchesCore(db: Firestore): Promise<{ synced: number }
 
     let winner: string | null = null;
     if (status === "final" && homeScore !== null && awayScore !== null) {
-      if (homeScore > awayScore) winner = homeTeam;
+      // ESPN's `winner` flag is penalty-aware: on a shootout the on-field score
+      // is level (e.g. 1-1) but the flag is set on the team that advanced. Trust
+      // it first; fall back to the score only if no flag is present.
+      if (home.winner === true) winner = homeTeam;
+      else if (away.winner === true) winner = awayTeam;
+      else if (homeScore > awayScore) winner = homeTeam;
       else if (awayScore > homeScore) winner = awayTeam;
       else winner = "draw";
     }
