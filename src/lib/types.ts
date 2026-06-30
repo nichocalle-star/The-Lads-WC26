@@ -4,7 +4,7 @@ export interface Match {
   awayTeam: string;
   homeTeamLogo?: string;
   awayTeamLogo?: string;
-  round: "Group Stage" | "Round of 32" | "Round of 16" | "Quarterfinal" | "Semifinal" | "Final";
+  round: "Group Stage" | "Round of 32" | "Round of 16" | "Quarterfinal" | "Semifinal" | "Third Place" | "Final";
   group?: string;
   venue: string;
   kickoffTimeUTC: string; // ISO string

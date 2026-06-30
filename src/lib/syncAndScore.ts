@@ -94,7 +94,9 @@ export async function syncMatchesCore(db: Firestore): Promise<{ synced: number }
     }
 
     const group = TEAM_GROUP[homeTeam] ?? TEAM_GROUP[awayTeam] ?? null;
-    const round = mapRound(event.season?.slug ?? "group-stage");
+    // ESPN's slug doesn't distinguish the 3rd-place playoff from the group
+    // stage, so it lands as "Group Stage" by default. Pin it by event id.
+    const round = event.id === "760516" ? "Third Place" : mapRound(event.season?.slug ?? "group-stage");
 
     const oddsData = comps.odds?.[0] ?? null;
     const odds = oddsData ? {
@@ -138,8 +140,41 @@ const ROUND_PTS: Record<string, { advance: number; exact: number }> = {
   "Round of 16":  { advance: 10, exact: 10 },
   "Quarterfinal": { advance: 20, exact: 20 },
   "Semifinal":    { advance: 40, exact: 40 },
+  // 3rd-place playoff sits between the semis (40) and the final (50).
+  "Third Place":  { advance: 45, exact: 45 },
   "Final":        { advance: 50, exact: 50 },
 };
+
+const KNOCKOUT_ROUNDS = new Set([
+  "Round of 32", "Round of 16", "Quarterfinal", "Semifinal", "Third Place", "Final",
+]);
+
+// A predicted winner only scores if it's a real, resolved team — not "draw",
+// not an ambiguous "Team A / Team B" left by an upstream tie, not a "Group A #1"
+// style placeholder.
+function isResolvedTeam(w: unknown): w is string {
+  return typeof w === "string" && w.length > 0 && w !== "draw"
+    && !w.includes(" / ") && !w.includes("#") && !/(Group |Place|Winner |Loser )/.test(w);
+}
+
+// Actual knockout results indexed by round → team → that team's result. Used by
+// the winner+round scoring model: a knockout pick is matched to the actual game
+// its predicted winner played in that round, regardless of bracket slot.
+type KnockoutActuals = Record<string, Record<string, { won: boolean; winnerGoals: number; loserGoals: number }>>;
+function buildKnockoutActuals(finals: FirebaseFirestore.DocumentData[]): KnockoutActuals {
+  const ko: KnockoutActuals = {};
+  for (const m of finals) {
+    if (!KNOCKOUT_ROUNDS.has(m.round)) continue;
+    if (m.homeScore == null || m.awayScore == null || !m.winner || m.winner === "draw") continue;
+    const homeWon = m.winner === m.homeTeam;
+    const winnerGoals = homeWon ? m.homeScore : m.awayScore;
+    const loserGoals = homeWon ? m.awayScore : m.homeScore;
+    (ko[m.round] ??= {});
+    ko[m.round][m.homeTeam] = { won: homeWon, winnerGoals, loserGoals };
+    ko[m.round][m.awayTeam] = { won: !homeWon, winnerGoals, loserGoals };
+  }
+  return ko;
+}
 
 // Predictions submitted after the global deadline shouldn't have existed at
 // all. Rather than deleting them retroactively, they score at a steep
@@ -147,33 +182,41 @@ const ROUND_PTS: Record<string, { advance: number; exact: number }> = {
 const LATE_SUBMISSION_MULTIPLIER = 0.1;
 
 function calcPoints(
-  round: string,
-  predictedWinner: string,
-  predictedHome: number | null,
-  predictedAway: number | null,
-  actualWinner: string,
-  actualHome: number | null,
-  actualAway: number | null
+  match: FirebaseFirestore.DocumentData,
+  pred: FirebaseFirestore.DocumentData,
+  koActual: KnockoutActuals
 ): number {
-  const pts = ROUND_PTS[round];
+  const pts = ROUND_PTS[match.round];
   if (!pts) return 0;
 
-  const correctOutcome = predictedWinner === actualWinner;
-  const exactScore =
-    actualHome !== null &&
-    actualAway !== null &&
-    predictedHome === actualHome &&
-    predictedAway === actualAway;
-
-  if (round === "Group Stage") {
+  // Group stage: scored against this exact fixture (real, fixed teams).
+  if (match.round === "Group Stage") {
+    const correctOutcome = pred.predictedWinner === match.winner;
+    const exactScore =
+      match.homeScore !== null && match.awayScore !== null &&
+      pred.predictedHomeScore === match.homeScore &&
+      pred.predictedAwayScore === match.awayScore;
     if (exactScore) return 2;
     if (correctOutcome) return 1;
     return 0;
   }
 
-  let total = 0;
-  if (correctOutcome) total += pts.advance;
-  if (exactScore) total += pts.exact;
+  // Knockout: match by predicted winner + round, NOT by bracket slot. Find the
+  // actual game the picked team played in this round. (Option A: the exact-score
+  // bonus only lands when your team actually won with that scoreline.)
+  const team = pred.predictedWinner;
+  if (!isResolvedTeam(team)) return 0;
+  const actual = koActual[match.round]?.[team];
+  if (!actual || !actual.won) return 0; // team didn't win (or didn't reach) this round
+
+  let total = pts.advance;
+  // Normalize the predicted scoreline to winner-perspective so home/away
+  // orientation (which came from the user's own bracket) doesn't matter.
+  const predWinnerGoals = Math.max(pred.predictedHomeScore ?? 0, pred.predictedAwayScore ?? 0);
+  const predLoserGoals = Math.min(pred.predictedHomeScore ?? 0, pred.predictedAwayScore ?? 0);
+  if (actual.winnerGoals === predWinnerGoals && actual.loserGoals === predLoserGoals) {
+    total += pts.exact;
+  }
   return total;
 }
 
@@ -192,100 +235,97 @@ function resultKey(m: FirebaseFirestore.DocumentData): string {
   return `${m.homeScore}-${m.awayScore}-${m.winner ?? ""}`;
 }
 
-// Incremental scoring: only touches matches whose final result hasn't been
-// scored yet (or changed since), and adjusts each user's total by the delta
-// rather than zeroing and recomputing every prediction from scratch. A match
-// already scored at its current result is skipped entirely — no prediction
-// reads, no writes — so a refresh on a day with a couple of new results costs
-// a few dozen reads instead of scanning the whole predictions collection.
+// Full recompute, gated by a result signature. The knockout winner+round model
+// means one finished game can change many users' points (anyone who backed
+// either team), so per-match incremental scoring no longer works. Instead we
+// hash every final result; if it's unchanged since the last run we skip
+// entirely (a few match reads, no prediction reads), and only when a result
+// changes do we re-score every prediction from scratch (absolute totals, which
+// also self-heals any drift).
 export async function scoreMatchesCore(db: Firestore): Promise<ScoreResult> {
   // World Cup 2026 only — scoring must never read any other tournament's data.
   const matchSnap = await db.collection("matches").where("status", "==", "final").get();
-  const wcDocs = matchSnap.docs.filter((d) => isWorldCup2026(d.data()));
+  const finals = matchSnap.docs
+    .map((d) => d.data())
+    .filter((m) => isWorldCup2026(m) && m.homeScore != null && m.awayScore != null);
 
-  // Only matches whose current result hasn't been scored yet.
-  const toScore = wcDocs.filter((d) => d.data().lastScoredResult !== resultKey(d.data()));
-  if (toScore.length === 0) {
-    return { scored: 0, finalMatches: wcDocs.length, newlyScored: 0, users: 0, lateSubmissions: 0, deltas: {} };
+  const signature = finals.map((m) => `${m.matchId}:${resultKey(m)}`).sort().join("|");
+  const stateRef = db.collection("metadata").doc("scoringState");
+  const stateSnap = await stateRef.get();
+  if (stateSnap.exists && stateSnap.data()?.signature === signature) {
+    return { scored: 0, finalMatches: finals.length, newlyScored: 0, users: 0, lateSubmissions: 0, deltas: {} };
   }
 
-  const matchData: Record<string, FirebaseFirestore.DocumentData> = {};
-  for (const d of toScore) matchData[d.id] = d.data();
-  const ids = toScore.map((d) => d.id);
+  const koActual = buildKnockoutActuals(finals);
+  const matchById: Record<string, FirebaseFirestore.DocumentData> = {};
+  for (const m of finals) matchById[m.matchId] = m;
 
-  const CHUNK = 30;
-  const userDelta: Record<string, number> = {};
+  const [predSnap, metricsSnap] = await Promise.all([
+    db.collection("predictions").get(),
+    db.collection("userMetrics").get(),
+  ]);
+
+  const deadlineMs = new Date(PREDICTIONS_LOCK_UTC).getTime();
+  const pointsByUser: Record<string, number> = {};
   let totalScored = 0;
   let lateSubmissions = 0;
-  const deadlineMs = new Date(PREDICTIONS_LOCK_UTC).getTime();
+  const writes: { ref: FirebaseFirestore.DocumentReference; data: FirebaseFirestore.DocumentData }[] = [];
 
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const chunk = ids.slice(i, i + CHUNK);
-    const predSnap = await db.collection("predictions").where("matchId", "in", chunk).get();
-
-    const batch = db.batch();
-    for (const predDoc of predSnap.docs) {
-      const pred = predDoc.data();
-      const match = matchData[pred.matchId];
-      if (!match) continue;
-
-      let pts = calcPoints(
-        match.round,
-        pred.predictedWinner,
-        pred.predictedHomeScore,
-        pred.predictedAwayScore,
-        match.winner,
-        match.homeScore,
-        match.awayScore
-      );
-
-      const isLate = !!pred.submittedAt && new Date(pred.submittedAt).getTime() > deadlineMs;
-      if (isLate) {
+  for (const predDoc of predSnap.docs) {
+    const pred = predDoc.data();
+    const match = matchById[pred.matchId];
+    let pts = 0;
+    let isLate = false;
+    if (match) {
+      pts = calcPoints(match, pred, koActual);
+      isLate = !!pred.submittedAt && new Date(pred.submittedAt).getTime() > deadlineMs;
+      if (isLate && pts > 0) {
         pts = Math.round(pts * LATE_SUBMISSION_MULTIPLIER * 10) / 10;
         lateSubmissions++;
       }
-
-      const prev = (pred.pointsAwarded as number) ?? 0;
-      const delta = pts - prev;
-      // Only write the prediction if its points actually changed.
-      if (delta !== 0 || pred.pointsAwarded === undefined) {
-        batch.update(predDoc.ref, { pointsAwarded: pts, ...(isLate ? { latePenalty: true } : {}) });
-      }
-      userDelta[pred.userId] = (userDelta[pred.userId] ?? 0) + delta;
+    }
+    if (((pred.pointsAwarded as number) ?? 0) !== pts) {
+      writes.push({ ref: predDoc.ref, data: { pointsAwarded: pts, ...(isLate ? { latePenalty: true } : {}) } });
+    }
+    if (pts > 0) {
+      pointsByUser[pred.userId] = (pointsByUser[pred.userId] ?? 0) + pts;
       totalScored++;
     }
-
-    // Mark every match in this chunk as scored at its current result (even
-    // ones with no predictions) so they're skipped on future runs.
-    for (const id of chunk) {
-      batch.update(db.collection("matches").doc(id), { lastScoredResult: resultKey(matchData[id]) });
-    }
-    await batch.commit();
   }
 
-  // Apply the accumulated deltas to userMetrics totals (read only the affected
-  // users, add, round to kill float drift, write).
-  const affected = Object.keys(userDelta).filter((uid) => Math.abs(userDelta[uid]) > 1e-9);
+  // Absolute user totals. Update every metrics doc (zeroing anyone who now has
+  // no points) plus create any missing ones.
   const deltas: Record<string, number> = {};
-  if (affected.length > 0) {
-    const refs = affected.map((uid) => db.collection("userMetrics").doc(uid));
-    const snaps = await db.getAll(...refs);
-    const batch = db.batch();
-    for (let i = 0; i < affected.length; i++) {
-      const uid = affected[i];
-      const cur = snaps[i].exists ? ((snaps[i].data()!.totalPoints as number) ?? 0) : 0;
-      const next = Math.round((cur + userDelta[uid]) * 10) / 10;
-      batch.set(db.collection("userMetrics").doc(uid), { userId: uid, totalPoints: next }, { merge: true });
-      deltas[uid] = Math.round(userDelta[uid] * 10) / 10;
+  const seen = new Set<string>();
+  for (const m of metricsSnap.docs) {
+    seen.add(m.id);
+    const next = Math.round((pointsByUser[m.id] ?? 0) * 10) / 10;
+    const prev = (m.data().totalPoints as number) ?? 0;
+    if (prev !== next) {
+      writes.push({ ref: m.ref, data: { userId: m.id, totalPoints: next } });
+      deltas[m.id] = Math.round((next - prev) * 10) / 10;
     }
+  }
+  for (const uid of Object.keys(pointsByUser)) {
+    if (seen.has(uid)) continue;
+    const next = Math.round(pointsByUser[uid] * 10) / 10;
+    writes.push({ ref: db.collection("userMetrics").doc(uid), data: { userId: uid, totalPoints: next } });
+    deltas[uid] = next;
+  }
+
+  writes.push({ ref: stateRef, data: { signature, scoredAt: new Date().toISOString() } });
+
+  for (let i = 0; i < writes.length; i += 450) {
+    const batch = db.batch();
+    for (const w of writes.slice(i, i + 450)) batch.set(w.ref, w.data, { merge: true });
     await batch.commit();
   }
 
   return {
     scored: totalScored,
-    finalMatches: wcDocs.length,
-    newlyScored: toScore.length,
-    users: affected.length,
+    finalMatches: finals.length,
+    newlyScored: writes.length,
+    users: Object.keys(deltas).length,
     lateSubmissions,
     deltas,
   };
@@ -335,13 +375,13 @@ export async function migrateOptimize(db: Firestore): Promise<{ users: number; c
   }
 
   // 2. full (re)score of final-match predictions
+  const koActual = buildKnockoutActuals(finals);
   for (const { ref, pred } of allPreds) {
     if (!finalIds.has(pred.matchId)) continue;
     const match = matchById[pred.matchId];
-    let pts = calcPoints(match.round, pred.predictedWinner, pred.predictedHomeScore, pred.predictedAwayScore,
-      match.winner as string, match.homeScore, match.awayScore);
+    let pts = calcPoints(match, pred, koActual);
     const isLate = !!pred.submittedAt && new Date(pred.submittedAt).getTime() > deadlineMs;
-    if (isLate) pts = Math.round(pts * LATE_SUBMISSION_MULTIPLIER * 10) / 10;
+    if (isLate && pts > 0) pts = Math.round(pts * LATE_SUBMISSION_MULTIPLIER * 10) / 10;
     writes.push({ ref, data: { pointsAwarded: pts, ...(isLate ? { latePenalty: true } : {}) } });
     pointsByUser[pred.userId] = (pointsByUser[pred.userId] ?? 0) + pts;
   }
