@@ -135,6 +135,79 @@ function PredictionCard({ p }: { p: Prediction }) {
   );
 }
 
+// Preview of the upcoming points-wagering side game. NOT WIRED UP — this is an
+// explainer card only; no bets can be placed yet.
+function PointsExchangePreview() {
+  return (
+    <div className="relative bg-[#0b1d12] border border-[#2a5c3d] rounded-2xl overflow-hidden">
+      <div className="flex h-[3px]">
+        <div className="flex-1 bg-[#0a7a3d]" /><div className="flex-1 bg-[#ffd166]" /><div className="flex-1 bg-[#c8102e]" />
+      </div>
+
+      <div className="px-5 pt-4 pb-1 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-[30px] h-[30px] rounded-full bg-[#10301c] flex items-center justify-center shrink-0 text-lg">🪙</span>
+          <div>
+            <p className="text-base font-semibold text-[#f0f7f2]">The Points Exchange</p>
+            <p className="text-xs text-[#6fae87] mt-0.5">Put the points you&apos;ve earned on the line — at real betting odds.</p>
+          </div>
+        </div>
+        <span className="text-[10px] tracking-wider text-[#3a2c06] bg-[#ffd166] rounded px-2 py-[3px] shrink-0 font-semibold">COMING SOON</span>
+      </div>
+
+      <div className="px-5 pt-2">
+        <span className="inline-block text-[11px] text-[#e3a3a3] bg-[#1d0b0b] border border-[#5c2a2a] rounded px-2 py-1">
+          🔒 Not active yet — a preview of how it&apos;ll work. You can&apos;t place wagers.
+        </span>
+      </div>
+
+      {/* How it works */}
+      <div className="px-5 pt-4 pb-1">
+        <p className="text-[11px] tracking-[1.5px] text-[#7fd4a3] mb-2">HOW IT&apos;LL WORK</p>
+        <ol className="space-y-2">
+          {[
+            ["Back a real match", "Pick an upcoming game — say Norway vs Ivory Coast — and a side to back (or the draw)."],
+            ["Stake your points", "Wager any of the points you've already earned. You can't bet more than you have, and there's no betting on credit."],
+            ["Odds from the live market", "Payouts use the real moneyline (DraftKings) — the same odds shown on the model cards below."],
+            ["Win big or lose it", "Win and your stake returns with profit at those odds; lose and the stake is gone. It moves your real total — and your leaderboard rank."],
+            ["Auto-settled at full time", "Wagers lock at kickoff and settle automatically once the match goes final."],
+          ].map(([t, d], i) => (
+            <li key={t} className="flex gap-3">
+              <span className="w-5 h-5 rounded-full bg-[#10301c] text-[#2bd97a] text-[11px] flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+              <p className="text-[13px] text-[#cfe6d8] leading-snug"><span className="text-[#f0f7f2] font-medium">{t}.</span> {d}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {/* Worked example */}
+      <div className="px-5 pt-4 pb-5">
+        <p className="text-[11px] tracking-[1.5px] text-[#6fae87] mb-2">EXAMPLE — STAKE 10 PTS ON NORWAY vs IVORY COAST</p>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {[
+            { team: "Norway", odds: "−165", win: "+6", note: "favorite", hot: false },
+            { team: "Draw", odds: "+290", win: "+29", note: "", hot: false },
+            { team: "Ivory Coast", odds: "+420", win: "+42", note: "upset", hot: true },
+          ].map((o) => (
+            <div key={o.team} className="rounded-lg py-2 px-1" style={{ background: o.hot ? "#1a2c12" : "#10301c", border: `0.5px solid ${o.hot ? "#2a5c3d" : "#1d3a28"}` }}>
+              <p className="text-[12px] text-[#cfe6d8] truncate">{o.team}</p>
+              <p className="text-[12px] text-[#9ec9ad] tabular-nums">{o.odds}</p>
+              <p className="text-[15px] font-semibold mt-0.5" style={{ color: o.hot ? "#2bd97a" : "#7fd4a3" }}>{o.win}</p>
+              {o.note && <p className="text-[9px] text-[#6fae87] uppercase tracking-wider">{o.note}</p>}
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-[#6fae87] mt-2 leading-relaxed">
+          Win on Ivory Coast and 10 pts becomes 52; back a side that loses and you&apos;re down 10. High risk, high reward — and yes, a bad night can drop you on the table.
+        </p>
+        <p className="text-[11px] text-[#3d6b4f] mt-3 border-t border-[#16301f] pt-2">
+          Rules are a draft — nothing&apos;s wired up yet. Tell us what to tweak: stake caps, a separate play-money bankroll instead of your live points, or extra markets (over/under, correct score).
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function GamblersCornerPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -170,6 +243,8 @@ export default function GamblersCornerPage() {
           entertainment only.
         </p>
       </div>
+
+      <PointsExchangePreview />
 
       {loadingData ? (
         <div className="flex justify-center py-16">
