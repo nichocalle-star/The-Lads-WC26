@@ -31,8 +31,9 @@ function shortName(name: string): string {
 interface MatchPicks {
   homeTeam: string;
   awayTeam: string;
+  isKnockout?: boolean;
   summary: { home: number; draw: number; away: number };
-  picks: { username: string; homeScore: number | null; awayScore: number | null; winner: string }[];
+  picks: { username: string; homeTeam?: string; awayTeam?: string; homeScore: number | null; awayScore: number | null; winner: string }[];
   noPicks: string[];
 }
 
@@ -149,6 +150,50 @@ export function MatchCard({ match }: { match: Match }) {
 }
 
 function MatchPicksPanel({ data }: { data: MatchPicks }) {
+  // In knockout rounds each player's bracket sent different teams into this slot,
+  // so a shared home/draw/away tally is meaningless — we show each player's own
+  // predicted matchup instead.
+  if (data.isKnockout) {
+    return (
+      <>
+        <p className="text-[11px] text-[#6fae87] px-4 pt-3 pb-1 leading-snug">
+          Each player&apos;s bracket put different teams here — showing the matchup they predicted.
+        </p>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] text-[#6fae87] tracking-wider">
+              <td className="px-4 pt-1 pb-1">PLAYER</td>
+              <td className="text-right pr-2">THEIR PREDICTION</td>
+            </tr>
+          </thead>
+          <tbody>
+            {data.picks.map((p, i) => {
+              const home = p.homeTeam ?? data.homeTeam;
+              const away = p.awayTeam ?? data.awayTeam;
+              const homeWon = (p.homeScore ?? 0) > (p.awayScore ?? 0);
+              const awayWon = (p.awayScore ?? 0) > (p.homeScore ?? 0);
+              return (
+                <tr key={p.username} className={`border-t border-[#16301f] ${i % 2 ? "bg-[#0e2517]" : ""}`}>
+                  <td className="px-4 py-2 text-[#f0f7f2] align-top whitespace-nowrap">{p.username}</td>
+                  <td className="text-right pr-3 py-2">
+                    <span className="tabular-nums text-[#f0f7f2]">
+                      <span className={homeWon ? "font-semibold text-white" : "text-[#9ec9ad]"}>{FLAG[home] ?? ""} {home}</span>
+                      <span className="text-[#f0f7f2] font-medium"> {p.homeScore} – {p.awayScore} </span>
+                      <span className={awayWon ? "font-semibold text-white" : "text-[#9ec9ad]"}>{away} {FLAG[away] ?? ""}</span>
+                    </span>
+                    {p.homeScore === p.awayScore && p.winner !== "Draw" && (
+                      <span className="block text-[10px] text-[#6fae87] mt-0.5">{FLAG[p.winner] ?? ""} {p.winner} to advance</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </>
+    );
+  }
+
   return (
     <>
       {/* Consensus summary */}

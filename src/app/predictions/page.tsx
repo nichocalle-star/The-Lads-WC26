@@ -116,7 +116,7 @@ function formatKickoff(iso: string) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-type Tab = "picks" | "standings" | "bracket";
+type Tab = "picks" | "standings" | "bracket" | "browse";
 
 export default function PredictionsPage() {
   const { user, loading } = useAuth();
@@ -167,6 +167,7 @@ export default function PredictionsPage() {
     { id: "picks", label: "My Picks" },
     { id: "standings", label: "Predicted Standings" },
     { id: "bracket", label: "Predicted Bracket" },
+    { id: "browse", label: "Other Brackets" },
   ];
 
   return (
@@ -199,6 +200,7 @@ export default function PredictionsPage() {
       {activeTab === "picks" && <PicksTab matches={matches} predictions={predictions} groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers} />}
       {activeTab === "standings" && <StandingsTab groups={groups} groupMatches={groupMatches} groupStandings={groupStandings} />}
       {activeTab === "bracket" && <BracketTab groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers} predictions={predictions} />}
+      {activeTab === "browse" && <BrowseBracketsTab matches={matches} selfUid={user!.uid} />}
     </div>
   );
 }
@@ -593,6 +595,103 @@ function BracketTab({ groupStandings, thirdPlaceQualifiers, predictions }: {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Browse any player's bracket: pick a player, see the teams their group
+// predictions sent into each knockout slot, the scoreline they predicted, and
+// the points that pick has earned so far.
+function BrowseBracketsTab({ matches, selfUid }: { matches: Match[]; selfUid: string }) {
+  const [players, setPlayers] = useState<{ userId: string; displayName: string; totalPoints: number }[]>([]);
+  const [selected, setSelected] = useState<string>("");
+  const [data, setData] = useState<{ uid: string; predictions: Record<string, Prediction> } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/leaderboard").then((r) => r.json()).then((j) => {
+      const list: { userId: string; displayName: string; totalPoints: number }[] = j.leaderboard ?? [];
+      setPlayers(list);
+      setSelected(list.find((pl) => pl.userId !== selfUid)?.userId ?? list[0]?.userId ?? "");
+    }).catch(() => {});
+  }, [selfUid]);
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    fetch(`/api/user-bracket?uid=${selected}`).then((r) => r.json())
+      .then((j) => { if (!cancelled) setData({ uid: selected, predictions: j.predictions ?? {} }); })
+      .catch(() => { if (!cancelled) setData({ uid: selected, predictions: {} }); });
+    return () => { cancelled = true; };
+  }, [selected]);
+
+  const loading = !data || data.uid !== selected;
+  const groupMatches = matches.filter((m) => m.round === "Group Stage");
+  const groups = [...new Set(groupMatches.map((m) => m.group).filter(Boolean))].sort() as string[];
+  const p = (data?.predictions ?? {}) as Record<string, Prediction>;
+  const gs: Record<string, TeamRow[]> = {};
+  for (const g of groups) gs[g] = calcGroupStandings(groupMatches.filter((m) => m.group === g), p);
+  const tp = calcThirdPlaceQualifiers(gs);
+  const resolve = (slot: string) => resolveSlot(slot, gs, tp, p);
+
+  const sel = players.find((x) => x.userId === selected);
+  const koPts = Object.entries(p).reduce((sum, [mid, pr]) => BRACKET_MAP[mid] ? sum + ((pr.pointsAwarded as number) ?? 0) : sum, 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="text-sm text-gray-400">Whose bracket:</label>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500">
+          {players.map((pl) => (
+            <option key={pl.userId} value={pl.userId}>{pl.displayName}{pl.userId === selfUid ? " (you)" : ""}</option>
+          ))}
+        </select>
+        {sel && (
+          <span className="text-sm text-gray-400">
+            Total <span className="text-green-400 font-semibold">{sel.totalPoints}</span> pts ·
+            <span className="text-blue-400 font-semibold"> {Math.round(koPts * 10) / 10}</span> from knockouts
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16"><div className="w-7 h-7 border-2 border-green-400 border-t-transparent rounded-full animate-spin" /></div>
+      ) : (
+        <div className="space-y-8">
+          {BRACKET_ROUNDS.map(({ label, matchIds, cols }) => (
+            <div key={label}>
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">{label}</h3>
+              <div className={`grid grid-cols-1 ${cols === 2 ? "md:grid-cols-2" : ""} gap-3`}>
+                {matchIds.map((matchId) => {
+                  const slots = BRACKET_MAP[matchId];
+                  if (!slots) return null;
+                  const home = resolve(slots.home);
+                  const away = resolve(slots.away);
+                  const pr = p[matchId];
+                  const pts = (pr?.pointsAwarded as number) ?? 0;
+                  return (
+                    <div key={matchId} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-2 gap-2">
+                        <p className="text-xs text-gray-500">{label} · {slotLabel(slots.home)} vs {slotLabel(slots.away)}</p>
+                        {pr && (pts > 0
+                          ? <span className="text-[11px] font-semibold text-green-300 bg-green-900/40 rounded px-1.5 py-0.5 shrink-0">+{pts}</span>
+                          : <span className="text-[11px] text-gray-600 shrink-0">0 pts</span>)}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`flex-1 text-center py-1.5 rounded-lg text-sm font-medium ${isResolved(home) ? "bg-green-900/30 text-green-300" : "bg-gray-800 text-gray-500 italic"}`}>{home}</span>
+                        {pr
+                          ? <span className="text-gray-300 text-xs tabular-nums shrink-0">{pr.predictedHomeScore}–{pr.predictedAwayScore}</span>
+                          : <span className="text-gray-600 text-xs shrink-0">vs</span>}
+                        <span className={`flex-1 text-center py-1.5 rounded-lg text-sm font-medium ${isResolved(away) ? "bg-green-900/30 text-green-300" : "bg-gray-800 text-gray-500 italic"}`}>{away}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
