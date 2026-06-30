@@ -244,10 +244,12 @@ function resultKey(m: FirebaseFirestore.DocumentData): string {
 // also self-heals any drift).
 export async function scoreMatchesCore(db: Firestore): Promise<ScoreResult> {
   // World Cup 2026 only — scoring must never read any other tournament's data.
-  const matchSnap = await db.collection("matches").where("status", "==", "final").get();
-  const finals = matchSnap.docs
-    .map((d) => d.data())
-    .filter((m) => isWorldCup2026(m) && m.homeScore != null && m.awayScore != null);
+  // We read ALL matches (not just finals): a knockout prediction's round comes
+  // from its slot even when that slot's own game hasn't been played, and the
+  // winner+round model scores it off the predicted team's actual game elsewhere.
+  const matchSnap = await db.collection("matches").get();
+  const allMatches = matchSnap.docs.map((d) => d.data()).filter((m) => isWorldCup2026(m));
+  const finals = allMatches.filter((m) => m.status === "final" && m.homeScore != null && m.awayScore != null);
 
   const signature = finals.map((m) => `${m.matchId}:${resultKey(m)}`).sort().join("|");
   const stateRef = db.collection("metadata").doc("scoringState");
@@ -258,7 +260,7 @@ export async function scoreMatchesCore(db: Firestore): Promise<ScoreResult> {
 
   const koActual = buildKnockoutActuals(finals);
   const matchById: Record<string, FirebaseFirestore.DocumentData> = {};
-  for (const m of finals) matchById[m.matchId] = m;
+  for (const m of allMatches) matchById[m.matchId] = m;
 
   const [predSnap, metricsSnap] = await Promise.all([
     db.collection("predictions").get(),
@@ -360,7 +362,6 @@ export async function migrateOptimize(db: Firestore): Promise<{ users: number; c
 
   const deadlineMs = new Date(PREDICTIONS_LOCK_UTC).getTime();
   const finals = matches.filter((m) => m.status === "final" && m.homeScore != null && m.awayScore != null);
-  const finalIds = new Set(finals.map((m) => m.matchId));
   const pointsByUser: Record<string, number> = {};
 
   // Helper to commit large batches in chunks (Firestore limit 500 writes).
@@ -374,11 +375,13 @@ export async function migrateOptimize(db: Firestore): Promise<{ users: number; c
     writes.push({ ref: d.ref, data: { championPick: champ ?? null } });
   }
 
-  // 2. full (re)score of final-match predictions
+  // 2. full (re)score of every prediction. A knockout pick scores off its
+  // predicted team's actual game, so we can't skip predictions whose own slot
+  // hasn't been played yet — calcPoints returns 0 for those that don't apply.
   const koActual = buildKnockoutActuals(finals);
   for (const { ref, pred } of allPreds) {
-    if (!finalIds.has(pred.matchId)) continue;
     const match = matchById[pred.matchId];
+    if (!match) continue;
     let pts = calcPoints(match, pred, koActual);
     const isLate = !!pred.submittedAt && new Date(pred.submittedAt).getTime() > deadlineMs;
     if (isLate && pts > 0) pts = Math.round(pts * LATE_SUBMISSION_MULTIPLIER * 10) / 10;
@@ -401,7 +404,7 @@ export async function migrateOptimize(db: Firestore): Promise<{ users: number; c
     await batch.commit();
   }
 
-  return { users: usersSnap.size, champions, finalMatches: finals.length, scored: allPreds.filter((p) => finalIds.has(p.pred.matchId)).length };
+  return { users: usersSnap.size, champions, finalMatches: finals.length, scored: allPreds.length };
 }
 
 // Correction: knockout predictions were saved with predictedWinner resolved
