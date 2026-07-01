@@ -38,6 +38,8 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 // Correct Score is a fixed-payout market in this game: nail the exact final
 // scoreline and you double your stake, regardless of how likely the score was.
 export const EXACT_SCORE_PAYOUT = 2.0;
+export const MAX_STAKE = 10;          // most you can stake on a single bet
+export const MAX_BETS_PER_MATCH = 2;  // most bets one player can place on a game
 
 function selectionLabelFor(market: BetMarket, selection: string, m: Match): string {
   if (market === "matchWinner") {
@@ -81,6 +83,7 @@ export async function placeBet(db: Firestore, uid: string, input: PlaceBetInput)
   const stake = round1(Number(input.stake));
 
   if (!(stake > 0)) throw new Error("Stake must be greater than 0.");
+  if (stake > MAX_STAKE) throw new Error(`Max stake is ${MAX_STAKE} points per bet.`);
   if (market !== "matchWinner" && market !== "correctScore") throw new Error("Unknown market.");
 
   const matchSnap = await db.collection("matches").doc(matchId).get();
@@ -107,8 +110,14 @@ export async function placeBet(db: Firestore, uid: string, input: PlaceBetInput)
     placedAt: now, status: "pending", settledAt: null, payout: 0, resultScore: null,
   };
 
+  const existingQuery = db.collection("bets").where("userId", "==", uid).where("matchId", "==", matchId);
+
   await db.runTransaction(async (tx) => {
-    const mSnap = await tx.get(metricsRef);
+    // All reads before any writes.
+    const [mSnap, existing] = await Promise.all([tx.get(metricsRef), tx.get(existingQuery)]);
+    if (existing.size >= MAX_BETS_PER_MATCH) {
+      throw new Error(`Max ${MAX_BETS_PER_MATCH} bets per game — you already have ${existing.size} on this match.`);
+    }
     const data = mSnap.exists ? mSnap.data()! : {};
     const predictionPoints = (data.totalPoints as number) ?? 0;
     const wagerBalance = (data.wagerBalance as number) ?? 0;

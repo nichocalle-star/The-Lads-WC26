@@ -6,7 +6,9 @@ import { auth } from "@/lib/firebase";
 type Odds = { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
 type Mtch = { matchId: string; homeTeam: string; awayTeam: string; kickoffTimeUTC: string; round: string; odds?: Odds };
 const EXACT_SCORE_ODDS = 2.0; // correct score pays a flat 2x
-type Bet = { id: string; matchLabel: string; selectionLabel: string; market: string; odds: number; stake: number; expectedPayout: number; potentialProfit: number; status: string; payout: number; placedAt: string; resultScore: string | null };
+const MAX_STAKE = 10;
+const MAX_BETS_PER_MATCH = 2;
+type Bet = { id: string; matchId: string; matchLabel: string; selectionLabel: string; market: string; odds: number; stake: number; expectedPayout: number; potentialProfit: number; status: string; payout: number; placedAt: string; resultScore: string | null };
 type Ctx = { predictionPoints: number; wagerBalance: number; available: number; bets: Bet[] };
 type Slip = { match: Mtch; market: "matchWinner" | "correctScore"; selection: string; label: string; odds: number };
 type BookBet = { username: string; selectionLabel: string; market: string; odds: number; stake: number; expectedPayout: number; status: string };
@@ -88,10 +90,12 @@ export default function BettingSection({ uid }: { uid: string }) {
   function reloadCtx() { fetch(`/api/betting?uid=${uid}`).then((r) => r.json()).then(setCtx).catch(() => {}); }
 
   const available = ctx?.available ?? 0;
+  const cap = Math.min(MAX_STAKE, available); // max stake for this bet
   const stakeNum = Math.max(0, r1(parseFloat(stake) || 0));
   const payout = slip ? r1(stakeNum * slip.odds) : 0;
   const profit = r1(payout - stakeNum);
-  const canReview = !!slip && stakeNum > 0 && stakeNum <= available;
+  const canReview = !!slip && stakeNum > 0 && stakeNum <= cap;
+  const betsOn = (matchId: string) => (ctx?.bets.filter((b) => b.matchId === matchId).length ?? 0);
 
   function open(match: Mtch, market: "matchWinner" | "correctScore", selection: string, label: string, odds: number) {
     setSlip({ match, market, selection, label, odds });
@@ -146,7 +150,7 @@ export default function BettingSection({ uid }: { uid: string }) {
       <div className="px-5 pb-2 space-y-1 text-[12px] text-[#9ec9ad] leading-relaxed">
         <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the <span className="text-[#f0f7f2]">final score including extra time</span>; a game decided on penalties counts as a <span className="text-[#f0f7f2]">Draw</span>.</p>
         <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact final scoreline (home team first, extra time included). Nail it and you win a flat <span className="text-[#f0f7f2]">2× your stake</span>, whatever the score.</p>
-        <p>You can place <span className="text-[#f0f7f2]">as many bets as you like per game</span> — the winner and any number of scorelines — each is separate and settles on its own.</p>
+        <p>Limits: <span className="text-[#f0f7f2]">max {MAX_STAKE} points per bet</span> and <span className="text-[#f0f7f2]">up to {MAX_BETS_PER_MATCH} bets per game</span> (e.g. the winner and a scoreline) — each is separate and settles on its own.</p>
         <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Bets lock at kickoff and settle automatically at full-time.</p>
       </div>
 
@@ -160,18 +164,25 @@ export default function BettingSection({ uid }: { uid: string }) {
         {matches.map((m) => {
           const dh = amToDec(m.odds?.homeML), dd = amToDec(m.odds?.drawML), da = amToDec(m.odds?.awayML);
           const { h, a } = cs(m.matchId);
+          const placed = betsOn(m.matchId);
+          const full = placed >= MAX_BETS_PER_MATCH;
           return (
             <div key={m.matchId} className="bg-[#0e2517] border border-[#16301f] rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium text-[#f0f7f2]">{m.homeTeam} <span className="text-[#6fae87]">v</span> {m.awayTeam}</p>
-                <p className="text-[10px] text-[#6fae87]">{fmtKick(m.kickoffTimeUTC)}</p>
+                <div className="text-right">
+                  <p className="text-[10px] text-[#6fae87]">{fmtKick(m.kickoffTimeUTC)}</p>
+                  <p className={`text-[10px] ${full ? "text-[#e0b063]" : "text-[#3d6b4f]"}`}>{placed}/{MAX_BETS_PER_MATCH} bets</p>
+                </div>
               </div>
+
+              {full && <p className="text-[11px] text-[#e0b063] bg-[#2a230c] rounded px-2 py-1 mb-2">You&apos;ve used both bets on this game.</p>}
 
               {/* Match Winner */}
               <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1">Match Winner <span className="text-[#3d6b4f]">· DraftKings · incl. extra time, pens = draw</span></p>
               <div className="flex gap-1.5 mb-3">
                 {([["home", m.homeTeam, dh], ["draw", "Draw", dd], ["away", m.awayTeam, da]] as const).map(([sel, lbl, odd]) => (
-                  <button key={sel} disabled={!odd}
+                  <button key={sel} disabled={!odd || full}
                     onClick={() => open(m, "matchWinner", sel, sel === "draw" ? "Draw" : `${lbl} to win`, odd as number)}
                     className="flex-1 bg-[#10301c] enabled:hover:bg-[#164027] border border-[#1d3a28] disabled:opacity-40 rounded-lg py-1.5 text-center transition-colors">
                     <span className="block text-[11px] text-[#cfe6d8] truncate px-1">{sel === "draw" ? "Draw" : lbl}</span>
@@ -187,8 +198,8 @@ export default function BettingSection({ uid }: { uid: string }) {
                 <span className="text-[#6fae87] text-lg font-bold mt-3">–</span>
                 <Stepper label={m.awayTeam} value={a} onChange={(v) => setCs(m.matchId, h, v)} />
                 <div className="ml-2 mt-3 text-center min-w-[92px]">
-                  <button onClick={() => open(m, "correctScore", `${h}:${a}`, `Exact score ${h}–${a}`, EXACT_SCORE_ODDS)}
-                    className="bg-[#0a7a3d] hover:bg-[#0d9449] text-white rounded-lg px-3 py-1.5 text-[12px] font-medium">
+                  <button disabled={full} onClick={() => open(m, "correctScore", `${h}:${a}`, `Exact score ${h}–${a}`, EXACT_SCORE_ODDS)}
+                    className="bg-[#0a7a3d] enabled:hover:bg-[#0d9449] disabled:opacity-40 text-white rounded-lg px-3 py-1.5 text-[12px] font-medium">
                     Bet {h}–{a} @ 2×
                   </button>
                 </div>
@@ -238,13 +249,13 @@ export default function BettingSection({ uid }: { uid: string }) {
                 <p className="text-base font-semibold text-[#f0f7f2] mt-1">{slip.label}</p>
                 <p className="text-[12px] text-[#9ec9ad]">{slip.match.homeTeam} v {slip.match.awayTeam} · odds <span className="text-[#2bd97a] font-medium">{slip.odds}</span></p>
 
-                <label className="block text-[11px] text-[#6fae87] mt-3 mb-1">Stake (of {available} available)</label>
-                <input type="number" inputMode="decimal" min={0} max={available} value={stake} onChange={(e) => setStake(e.target.value)}
+                <label className="block text-[11px] text-[#6fae87] mt-3 mb-1">Stake (max {cap} — {MAX_STAKE} cap, {available} available)</label>
+                <input type="number" inputMode="decimal" min={0} max={cap} value={stake} onChange={(e) => setStake(e.target.value)}
                   placeholder="0" autoFocus
                   className="w-full bg-[#07140c] border border-[#1d3a28] rounded-lg px-3 py-2 text-white text-lg tabular-nums focus:outline-none focus:border-[#2bd97a]" />
                 <div className="flex gap-1.5 mt-1.5">
-                  {[5, 10, 25].map((v) => <button key={v} onClick={() => setStake(String(Math.min(v, available)))} className="flex-1 text-[11px] bg-[#10301c] border border-[#1d3a28] rounded py-1 text-[#cfe6d8]">{v}</button>)}
-                  <button onClick={() => setStake(String(available))} className="flex-1 text-[11px] bg-[#10301c] border border-[#1d3a28] rounded py-1 text-[#cfe6d8]">Max</button>
+                  {[1, 5, 10].map((v) => <button key={v} disabled={v > cap} onClick={() => setStake(String(v))} className="flex-1 text-[11px] bg-[#10301c] border border-[#1d3a28] disabled:opacity-40 rounded py-1 text-[#cfe6d8]">{v}</button>)}
+                  <button onClick={() => setStake(String(cap))} className="flex-1 text-[11px] bg-[#10301c] border border-[#1d3a28] rounded py-1 text-[#cfe6d8]">Max</button>
                 </div>
 
                 <div className="mt-3 bg-[#0e2517] border border-[#16301f] rounded-lg p-3 text-[13px] space-y-1">
@@ -252,7 +263,7 @@ export default function BettingSection({ uid }: { uid: string }) {
                   <div className="flex justify-between"><span className="text-[#9ec9ad]">Profit</span><span className="text-[#cfe6d8] tabular-nums">+{profit}</span></div>
                   <div className="flex justify-between"><span className="text-[#9ec9ad]">Balance if it loses</span><span className="text-[#cfe6d8] tabular-nums">{r1(available - stakeNum)}</span></div>
                 </div>
-                {stakeNum > available && <p className="text-[12px] text-red-400 mt-1.5">Stake exceeds your balance.</p>}
+                {stakeNum > cap && <p className="text-[12px] text-red-400 mt-1.5">{stakeNum > available ? "Stake exceeds your balance." : `Max ${MAX_STAKE} points per bet.`}</p>}
 
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => setSlip(null)} className="flex-1 border border-[#1d3a28] text-[#9ec9ad] rounded-lg py-2 text-sm">Cancel</button>
