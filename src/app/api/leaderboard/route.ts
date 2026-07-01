@@ -39,11 +39,16 @@ export async function GET() {
         const user = d.data();
         if (!user.username) return null;
         const metrics = metricsMap[d.id] ?? {};
+        const predictionPoints = (metrics.totalPoints as number) ?? 0;
+        const wagerBalance = (metrics.wagerBalance as number) ?? 0;
         return {
           userId: d.id,
           displayName: user.username as string,
           photoURL: (user.photoURL as string) ?? null,
-          totalPoints: (metrics.totalPoints as number) ?? 0,
+          // Competitive score = prediction points + net betting P&L.
+          totalPoints: Math.round((predictionPoints + wagerBalance) * 10) / 10,
+          predictionPoints,
+          wagerBalance,
           totalPredictions: (metrics.totalPredictions as number) ?? 0,
           correctPredictions: (metrics.correctPredictions as number) ?? 0,
           predictionAccuracy: (metrics.predictionAccuracy as number) ?? 0,

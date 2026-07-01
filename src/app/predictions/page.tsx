@@ -758,8 +758,9 @@ function AuditTab({ selfUid }: { selfUid: string }) {
         <>
           <div className={`rounded-lg px-4 py-3 text-sm border ${reconciles ? "bg-green-900/20 border-green-800/50 text-green-300" : "bg-yellow-900/20 border-yellow-800/50 text-yellow-300"}`}>
             {reconciles ? "✓ " : "⚠️ "}
-            Ledger adds up to <span className="font-semibold">{data.total}</span> pts
-            {data.metricsTotal != null && <> · leaderboard shows <span className="font-semibold">{data.metricsTotal}</span> {reconciles ? "— they match." : "— MISMATCH."}</>}
+            Ledger adds up to <span className="font-semibold">{data.total}</span> prediction pts
+            {data.metricsTotal != null && <> · recorded prediction total is <span className="font-semibold">{data.metricsTotal}</span> {reconciles ? "— they match." : "— MISMATCH."}</>}
+            <span className="block text-[11px] opacity-70 mt-0.5">(Points Exchange bets are tracked separately in the Gambler&apos;s Corner.)</span>
           </div>
 
           <div className="overflow-x-auto -mx-2 sm:mx-0">
