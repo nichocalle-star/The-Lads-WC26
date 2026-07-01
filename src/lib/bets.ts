@@ -35,6 +35,10 @@ export interface Bet {
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+// Correct Score is a fixed-payout market in this game: nail the exact final
+// scoreline and you double your stake, regardless of how likely the score was.
+export const EXACT_SCORE_PAYOUT = 2.0;
+
 function selectionLabelFor(market: BetMarket, selection: string, m: Match): string {
   if (market === "matchWinner") {
     if (selection === "home") return `${m.homeTeam} to win`;
@@ -44,18 +48,25 @@ function selectionLabelFor(market: BetMarket, selection: string, m: Match): stri
   return `Exact score ${selection.replace(":", "–")} (${m.homeTeam} first)`;
 }
 
-// Odds for a given selection off the stored book odds. Returns null if the
-// market/selection isn't offered.
+// American moneyline (from ESPN's DraftKings feed) → decimal payout multiplier.
+export function americanToDecimal(a: number | null | undefined): number | null {
+  if (a == null || a === 0) return null;
+  const d = a < 0 ? 1 + 100 / -a : 1 + a / 100;
+  return Math.round(d * 100) / 100;
+}
+
+// Decimal odds for a selection. Match Winner uses the match's DraftKings
+// moneyline (via ESPN); Correct Score is a flat 2x for any exact scoreline.
 function oddsForSelection(m: Match, market: BetMarket, selection: string): number | null {
-  const o = m.wagerOdds;
-  if (!o) return null;
   if (market === "matchWinner") {
-    const v = selection === "home" ? o.matchWinner.home : selection === "away" ? o.matchWinner.away : selection === "draw" ? o.matchWinner.draw : null;
-    return v && v > 1 ? v : null;
+    const o = m.odds;
+    if (!o) return null;
+    const am = selection === "home" ? o.homeML : selection === "away" ? o.awayML : selection === "draw" ? o.drawML : null;
+    const dec = americanToDecimal(am);
+    return dec && dec > 1 ? dec : null;
   }
   if (market === "correctScore") {
-    const hit = o.exactScore.find((e) => e.score === selection);
-    return hit && hit.odd > 1 ? hit.odd : null;
+    return /^[0-9]:[0-9]$/.test(selection) ? EXACT_SCORE_PAYOUT : null;
   }
   return null;
 }

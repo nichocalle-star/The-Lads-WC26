@@ -3,7 +3,6 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { syncMatchesCore, scoreMatchesCore } from "@/lib/syncAndScore";
 import { settleBetsCore } from "@/lib/bets";
-import { syncOddsCore } from "@/lib/apiFootball";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -78,17 +77,10 @@ export async function POST(req: NextRequest) {
     const username = ((await db.collection("users").doc(verified.uid).get()).data()?.username as string) ?? "someone";
     if (step !== "score") await syncMatchesCore(db);
     const scoreResult = await scoreMatchesCore(db);
-    // Settle any bets on matches that just went final (idempotent).
+    // Settle any bets on matches that just went final (idempotent). Betting
+    // odds ride along with the match sync above (ESPN carries the DraftKings
+    // moneyline), so there's nothing separate to refresh.
     const betResult = await settleBetsCore(db);
-    // Refresh betting odds too — globally throttled to ~every 3h so it rides on
-    // the score refresh without burning the API-Football budget. Never fatal.
-    let oddsSynced = 0;
-    try {
-      const o = await syncOddsCore(db);
-      oddsSynced = o.oddsUpdated;
-    } catch (e) {
-      console.error("odds sync (non-fatal):", e);
-    }
 
     const lastRefreshedAt = new Date().toISOString();
     await db.collection("meta").doc(META_DOC).set({ lastRefreshedAt, lastRefreshedBy: username }, { merge: true });
@@ -101,7 +93,6 @@ export async function POST(req: NextRequest) {
       finalMatches: scoreResult.finalMatches,
       users: scoreResult.users,
       betsSettled: betResult.settled,
-      oddsSynced,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

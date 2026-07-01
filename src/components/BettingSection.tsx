@@ -3,12 +3,9 @@
 import { useEffect, useState } from "react";
 import { auth } from "@/lib/firebase";
 
-type Odds = {
-  bookmaker: string | null;
-  matchWinner: { home: number | null; draw: number | null; away: number | null };
-  exactScore: { score: string; odd: number }[];
-};
-type Mtch = { matchId: string; homeTeam: string; awayTeam: string; kickoffTimeUTC: string; round: string; wagerOdds?: Odds };
+type Odds = { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
+type Mtch = { matchId: string; homeTeam: string; awayTeam: string; kickoffTimeUTC: string; round: string; odds?: Odds };
+const EXACT_SCORE_ODDS = 2.0; // correct score pays a flat 2x
 type Bet = { id: string; matchLabel: string; selectionLabel: string; market: string; odds: number; stake: number; expectedPayout: number; potentialProfit: number; status: string; payout: number; placedAt: string; resultScore: string | null };
 type Ctx = { predictionPoints: number; wagerBalance: number; available: number; bets: Bet[] };
 type Slip = { match: Mtch; market: "matchWinner" | "correctScore"; selection: string; label: string; odds: number };
@@ -17,6 +14,9 @@ type BookBet = { username: string; selectionLabel: string; market: string; odds:
 const TZ = "America/New_York";
 const fmtKick = (iso: string) => new Date(iso).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit", timeZone: TZ }) + " ET";
 const r1 = (n: number) => Math.round(n * 10) / 10;
+// American moneyline (DraftKings, via ESPN) → decimal payout multiplier.
+const amToDec = (a: number | null | undefined): number | null =>
+  a == null || a === 0 ? null : Math.round((a < 0 ? 1 + 100 / -a : 1 + a / 100) * 100) / 100;
 
 // Who's betting on a given match — fetched lazily when expanded.
 function MatchBook({ matchId, reloadKey }: { matchId: string; reloadKey: number }) {
@@ -76,7 +76,7 @@ export default function BettingSection({ uid }: { uid: string }) {
       if (cancelled) return;
       const now = Date.now();
       const upcoming = ((j.matches ?? []) as Mtch[])
-        .filter((m) => m.wagerOdds && new Date(m.kickoffTimeUTC).getTime() > now)
+        .filter((m) => m.odds && m.odds.homeML != null && new Date(m.kickoffTimeUTC).getTime() > now)
         .sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime());
       setMatches(upcoming);
       setOpenBook(upcoming[0]?.matchId ?? null); // show the next game's book by default
@@ -144,11 +144,10 @@ export default function BettingSection({ uid }: { uid: string }) {
 
       {/* How it works */}
       <div className="px-5 pb-2 space-y-1 text-[12px] text-[#9ec9ad] leading-relaxed">
-        <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away. Settles on the <span className="text-[#f0f7f2]">final score including extra time</span>; a game decided on penalties counts as a <span className="text-[#f0f7f2]">Draw</span>.</p>
-        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact final scoreline (home team first, extra time included).</p>
+        <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the <span className="text-[#f0f7f2]">final score including extra time</span>; a game decided on penalties counts as a <span className="text-[#f0f7f2]">Draw</span>.</p>
+        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact final scoreline (home team first, extra time included). Nail it and you win a flat <span className="text-[#f0f7f2]">2× your stake</span>, whatever the score.</p>
         <p>You can place <span className="text-[#f0f7f2]">as many bets as you like per game</span> — the winner and any number of scorelines — each is separate and settles on its own.</p>
         <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Bets lock at kickoff and settle automatically at full-time.</p>
-        <p className="text-[#e0b063]">⚠️ Odds are raw bookmaker prices — the house edge is built in (~7% on winners, far more on exact scores).</p>
       </div>
 
       {result && (
@@ -159,9 +158,8 @@ export default function BettingSection({ uid }: { uid: string }) {
       <div className="px-5 py-2 space-y-3">
         {matches.length === 0 && <p className="text-[13px] text-[#6fae87] py-3 text-center">No upcoming matches with odds right now.</p>}
         {matches.map((m) => {
-          const o = m.wagerOdds!;
+          const dh = amToDec(m.odds?.homeML), dd = amToDec(m.odds?.drawML), da = amToDec(m.odds?.awayML);
           const { h, a } = cs(m.matchId);
-          const scoreOdd = o.exactScore.find((x) => x.score === `${h}:${a}`)?.odd ?? null;
           return (
             <div key={m.matchId} className="bg-[#0e2517] border border-[#16301f] rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
@@ -170,9 +168,9 @@ export default function BettingSection({ uid }: { uid: string }) {
               </div>
 
               {/* Match Winner */}
-              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1">Match Winner <span className="text-[#3d6b4f]">· incl. extra time, pens = draw</span></p>
+              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1">Match Winner <span className="text-[#3d6b4f]">· DraftKings · incl. extra time, pens = draw</span></p>
               <div className="flex gap-1.5 mb-3">
-                {([["home", m.homeTeam, o.matchWinner.home], ["draw", "Draw", o.matchWinner.draw], ["away", m.awayTeam, o.matchWinner.away]] as const).map(([sel, lbl, odd]) => (
+                {([["home", m.homeTeam, dh], ["draw", "Draw", dd], ["away", m.awayTeam, da]] as const).map(([sel, lbl, odd]) => (
                   <button key={sel} disabled={!odd}
                     onClick={() => open(m, "matchWinner", sel, sel === "draw" ? "Draw" : `${lbl} to win`, odd as number)}
                     className="flex-1 bg-[#10301c] enabled:hover:bg-[#164027] border border-[#1d3a28] disabled:opacity-40 rounded-lg py-1.5 text-center transition-colors">
@@ -182,21 +180,17 @@ export default function BettingSection({ uid }: { uid: string }) {
                 ))}
               </div>
 
-              {/* Correct Score — stepper entry like the bracket */}
-              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1.5">Correct Score</p>
+              {/* Correct Score — stepper entry like the bracket, flat 2x */}
+              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1.5">Correct Score <span className="text-[#3d6b4f]">· pays 2× if you nail it</span></p>
               <div className="flex items-center justify-center gap-3 bg-[#07140c] border border-[#16301f] rounded-lg py-2">
                 <Stepper label={m.homeTeam} value={h} onChange={(v) => setCs(m.matchId, v, a)} />
                 <span className="text-[#6fae87] text-lg font-bold mt-3">–</span>
                 <Stepper label={m.awayTeam} value={a} onChange={(v) => setCs(m.matchId, h, v)} />
                 <div className="ml-2 mt-3 text-center min-w-[92px]">
-                  {scoreOdd ? (
-                    <button onClick={() => open(m, "correctScore", `${h}:${a}`, `Exact score ${h}–${a}`, scoreOdd)}
-                      className="bg-[#0a7a3d] hover:bg-[#0d9449] text-white rounded-lg px-3 py-1.5 text-[12px] font-medium">
-                      Bet {h}–{a} @ {scoreOdd}
-                    </button>
-                  ) : (
-                    <span className="text-[11px] text-[#6fae87]">No odds for {h}–{a}</span>
-                  )}
+                  <button onClick={() => open(m, "correctScore", `${h}:${a}`, `Exact score ${h}–${a}`, EXACT_SCORE_ODDS)}
+                    className="bg-[#0a7a3d] hover:bg-[#0d9449] text-white rounded-lg px-3 py-1.5 text-[12px] font-medium">
+                    Bet {h}–{a} @ 2×
+                  </button>
                 </div>
               </div>
 
