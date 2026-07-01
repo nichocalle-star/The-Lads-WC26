@@ -3,7 +3,7 @@ export default function RulesPage() {
     <div className="max-w-2xl mx-auto space-y-10">
       <div>
         <h1 className="text-3xl font-bold">How It Works</h1>
-        <p className="text-gray-400 mt-2">Everything you need to know about predicting and scoring.</p>
+        <p className="text-gray-400 mt-2">Everything you need to know about predicting, scoring, and the Points Exchange.</p>
       </div>
 
       {/* Scoring table */}
@@ -14,18 +14,19 @@ export default function RulesPage() {
             <thead>
               <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase tracking-wider">
                 <th className="text-left px-4 py-3">Round</th>
-                <th className="text-center px-4 py-3">Advance</th>
-                <th className="text-center px-4 py-3">Exact</th>
-                <th className="text-center px-4 py-3">Max</th>
+                <th className="text-center px-4 py-3">Correct pick</th>
+                <th className="text-center px-4 py-3">Exact score</th>
+                <th className="text-center px-4 py-3">Max / match</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {[
-                { round: "Group Stage", icon: "🌍", advance: 1, exact: 2, max: 96 },
-                { round: "Round of 32", icon: "🔟", advance: 5, exact: 5, max: 160 },
-                { round: "Round of 16", icon: "⚡", advance: 10, exact: 10, max: 160 },
-                { round: "Quarter-Finals", icon: "🔥", advance: 20, exact: 20, max: 160 },
-                { round: "Semi-Finals", icon: "🌟", advance: 40, exact: 40, max: 160 },
+                { round: "Group Stage", icon: "🌍", advance: 1, exact: 2, max: 2 },
+                { round: "Round of 32", icon: "🔟", advance: 5, exact: 5, max: 10 },
+                { round: "Round of 16", icon: "⚡", advance: 10, exact: 10, max: 20 },
+                { round: "Quarter-Finals", icon: "🔥", advance: 20, exact: 20, max: 40 },
+                { round: "Semi-Finals", icon: "🌟", advance: 40, exact: 40, max: 80 },
+                { round: "3rd-Place Playoff", icon: "🥉", advance: 45, exact: 45, max: 90 },
                 { round: "Final", icon: "🏆", advance: 50, exact: 50, max: 100 },
               ].map((row) => (
                 <tr key={row.round} className="hover:bg-gray-800/50 transition-colors">
@@ -38,16 +39,11 @@ export default function RulesPage() {
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="border-t border-gray-700 bg-gray-800/50">
-                <td className="px-4 py-3 font-bold text-white" colSpan={3}>Total maximum</td>
-                <td className="px-4 py-3 text-center font-bold text-green-400">836</td>
-              </tr>
-            </tfoot>
           </table>
         </div>
-        <p className="text-xs text-gray-500 mt-2 px-1">
-          <span className="text-blue-400 font-medium">Advance</span> = team correctly predicted to qualify · <span className="text-green-400 font-medium">Exact</span> = team predicted in their precise position
+        <p className="text-xs text-gray-500 mt-2 px-1 leading-relaxed">
+          In the <span className="text-gray-300">group stage</span> these are either/or — an exact score already counts as the correct result, so the most a match can earn is 2.
+          In the <span className="text-gray-300">knockouts</span> they <span className="text-gray-300">stack</span>: get the winner right for the first number, and nail the exact score for the second on top (e.g. up to 10 in the Round of 32).
         </p>
       </section>
 
@@ -55,68 +51,40 @@ export default function RulesPage() {
       <section>
         <h2 className="text-xl font-semibold mb-1 text-green-400">Group Stage Scoring</h2>
         <p className="text-gray-400 text-sm mb-4">
-          You predict the full standings (1st–4th) for each of the 12 groups. Every position can earn up to 2 points.
+          You predict the scoreline of every group match. Each match is scored on its own.
         </p>
         <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800">
           <div className="px-4 py-3 flex items-start gap-3">
-            <span className="text-blue-400 font-bold shrink-0 mt-0.5">+1</span>
+            <span className="text-green-400 font-bold shrink-0 mt-0.5">+2</span>
             <div>
-              <p className="font-medium text-sm">Advance point</p>
-              <p className="text-gray-400 text-sm">The team you predicted for a qualifying position (1st or 2nd) actually qualifies, regardless of whether they finished 1st or 2nd.</p>
+              <p className="font-medium text-sm">Exact score</p>
+              <p className="text-gray-400 text-sm">Your predicted scoreline matches the final score exactly.</p>
             </div>
           </div>
           <div className="px-4 py-3 flex items-start gap-3">
-            <span className="text-green-400 font-bold shrink-0 mt-0.5">+2</span>
+            <span className="text-blue-400 font-bold shrink-0 mt-0.5">+1</span>
             <div>
-              <p className="font-medium text-sm">Exact position point</p>
-              <p className="text-gray-400 text-sm">The team you predicted finishes in the exact position you picked — 1st for 1st, 2nd for 2nd, 3rd for 3rd, 4th for 4th.</p>
+              <p className="font-medium text-sm">Correct result</p>
+              <p className="text-gray-400 text-sm">You got the outcome right (home win, draw, or away win) but not the exact score.</p>
             </div>
           </div>
         </div>
 
         {/* Example */}
         <div className="mt-4 bg-gray-900 border border-gray-700 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3">Example — Group A</p>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <p className="text-xs text-gray-500 mb-2">Your prediction</p>
-              <div className="space-y-1 text-sm">
-                <div className="flex gap-2"><span className="text-gray-500 w-6">1st</span><span>Brazil</span></div>
-                <div className="flex gap-2"><span className="text-gray-500 w-6">2nd</span><span>Portugal</span></div>
-                <div className="flex gap-2"><span className="text-gray-500 w-6">3rd</span><span>Ghana</span></div>
-                <div className="flex gap-2"><span className="text-gray-500 w-6">4th</span><span>Uruguay</span></div>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 mb-2">Actual result</p>
-              <div className="space-y-1 text-sm">
-                <div className="flex gap-2"><span className="text-gray-500 w-6">1st</span><span>Portugal</span></div>
-                <div className="flex gap-2"><span className="text-gray-500 w-6">2nd</span><span>Brazil</span></div>
-                <div className="flex gap-2"><span className="text-gray-500 w-6">3rd</span><span>Ghana</span></div>
-                <div className="flex gap-2"><span className="text-gray-500 w-6">4th</span><span>Uruguay</span></div>
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-gray-800 pt-3 space-y-1.5 text-sm">
+          <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3">Example — you predict Brazil 2–1 Ghana</p>
+          <div className="space-y-1.5 text-sm">
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Brazil predicted 1st → finished 2nd (still qualifies)</span>
-              <span className="text-blue-400 font-semibold">+1</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Portugal predicted 2nd → finished 1st (still qualifies)</span>
-              <span className="text-blue-400 font-semibold">+1</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400">Ghana predicted 3rd → finished exactly 3rd</span>
+              <span className="text-gray-400">Final: Brazil 2–1 Ghana — exact</span>
               <span className="text-green-400 font-semibold">+2</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Uruguay predicted 4th → finished exactly 4th</span>
-              <span className="text-green-400 font-semibold">+2</span>
+              <span className="text-gray-400">Final: Brazil 3–0 Ghana — right result, wrong score</span>
+              <span className="text-blue-400 font-semibold">+1</span>
             </div>
-            <div className="flex justify-between items-center border-t border-gray-800 pt-2 font-semibold">
-              <span>Total for this group</span>
-              <span className="text-white">6 pts</span>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Final: Ghana 1–0 Brazil — wrong result</span>
+              <span className="text-gray-500 font-semibold">0</span>
             </div>
           </div>
         </div>
@@ -124,26 +92,46 @@ export default function RulesPage() {
 
       {/* Knockout rounds explained */}
       <section>
-        <h2 className="text-xl font-semibold mb-1 text-green-400">Knockout Round Scoring</h2>
+        <h2 className="text-xl font-semibold mb-1 text-green-400">Knockout Scoring</h2>
         <p className="text-gray-400 text-sm mb-4">
-          Advance and Exact are equal in knockout rounds — you earn points simply for picking the correct winner. No bonus for anything beyond getting the right team through.
+          Your group predictions build your bracket. In the knockouts you&apos;re scored on the <span className="text-gray-300">teams you back to advance</span> and the scores you give them — not the exact bracket position.
         </p>
         <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800">
-          {[
-            { round: "Round of 32", pts: 5, note: "Pick the team that makes it to the Round of 16" },
-            { round: "Round of 16", pts: 10, note: "Pick the team that makes it to the Quarter-Finals" },
-            { round: "Quarter-Finals", pts: 20, note: "Pick the team that makes it to the Semi-Finals" },
-            { round: "Semi-Finals", pts: 40, note: "Pick the team that makes it to the Final" },
-            { round: "Final", pts: 50, note: "Pick the World Cup Champion" },
-          ].map((row) => (
-            <div key={row.round} className="px-4 py-3 flex items-center justify-between gap-4">
-              <div>
-                <p className="font-medium text-sm">{row.round}</p>
-                <p className="text-gray-400 text-xs mt-0.5">{row.note}</p>
-              </div>
-              <span className="text-green-400 font-bold text-lg shrink-0">+{row.pts}</span>
+          <div className="px-4 py-3 flex items-start gap-3">
+            <span className="text-blue-400 font-bold shrink-0 mt-0.5">win</span>
+            <div>
+              <p className="font-medium text-sm">Correct winner</p>
+              <p className="text-gray-400 text-sm">The team you backed actually wins its game that round — <span className="text-gray-300">whoever the opponent turns out to be</span>. Worth the round&apos;s first number (5, 10, 20, 40, 45, 50).</p>
             </div>
-          ))}
+          </div>
+          <div className="px-4 py-3 flex items-start gap-3">
+            <span className="text-green-400 font-bold shrink-0 mt-0.5">+score</span>
+            <div>
+              <p className="font-medium text-sm">Exact score (stacks)</p>
+              <p className="text-gray-400 text-sm">On top of the winner, you also nailed the winning scoreline — worth the round&apos;s second number.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 bg-gray-900 border border-gray-700 rounded-xl p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-3">Example — Round of 32, you predict Brazil to beat Japan 2–1</p>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Brazil beats <span className="text-gray-300">South Africa</span> 2–1 — winner + exact</span>
+              <span className="text-green-400 font-semibold">+10</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Brazil beats South Africa 3–0 — winner only</span>
+              <span className="text-blue-400 font-semibold">+5</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-400">Brazil is knocked out</span>
+              <span className="text-gray-500 font-semibold">0</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-800">
+            You picked Japan as the opponent and it was actually South Africa — doesn&apos;t matter. Only the team you backed to win and the winning scoreline count.
+          </p>
         </div>
       </section>
 
@@ -152,9 +140,9 @@ export default function RulesPage() {
         <h2 className="text-xl font-semibold mb-4 text-green-400">How Predictions Work</h2>
         <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800">
           {[
-            ["Predictions lock at kickoff", "Once a match starts, your pick is locked in. Get your predictions in before kick-off!"],
-            ["Group standings feed the bracket", "Your predicted group standings automatically populate the knockout bracket. Mexico 1st in Group A? They show up as the Group A seed in the Round of 32."],
-            ["Score entry determines the winner", "Enter the scoreline you expect — the winner is derived automatically from your score."],
+            ["Predictions lock at kickoff", "Once a match starts, your pick is locked in. Get your predictions in before kick-off."],
+            ["Group standings feed the bracket", "Your predicted group standings automatically populate the knockout bracket — 1st in Group A becomes the Group A seed in the Round of 32."],
+            ["Score entry determines the winner", "Enter the scoreline you expect and the winner is derived from it. A tie scoreline leaves that bracket slot ambiguous, so it earns no winner points."],
           ].map(([title, body]) => (
             <div key={title} className="px-4 py-3">
               <p className="font-medium text-sm">{title}</p>
@@ -162,6 +150,35 @@ export default function RulesPage() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Points Exchange (betting) */}
+      <section>
+        <h2 className="text-xl font-semibold mb-1 text-green-400">🎲 The Points Exchange</h2>
+        <p className="text-gray-400 text-sm mb-4">
+          In the Gambler&apos;s Corner you can <span className="text-gray-300">stake the points you&apos;ve earned</span> on upcoming matches. Wins and losses move your real leaderboard score.
+        </p>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl divide-y divide-gray-800">
+          <div className="px-4 py-3">
+            <p className="font-medium text-sm text-white">Match Winner — live DraftKings odds</p>
+            <p className="text-gray-400 text-sm mt-0.5">Back home, draw, or away. Settles on the result after <span className="text-gray-300">90 minutes + stoppage time — not extra time or penalties</span>. A knockout that goes to extra time or a shootout was level at 90, so it settles as a <span className="text-gray-300">Draw</span>.</p>
+          </div>
+          <div className="px-4 py-3">
+            <p className="font-medium text-sm text-white">Correct Score — flat 3×</p>
+            <p className="text-gray-400 text-sm mt-0.5">Pick the exact scoreline at <span className="text-gray-300">90 minutes</span>. Nail it and you win <span className="text-gray-300">3× your stake</span>. If a game goes to extra time the 90-minute score can&apos;t be confirmed, so those bets are refunded.</p>
+          </div>
+          <div className="px-4 py-3">
+            <p className="font-medium text-sm text-white">Limits</p>
+            <p className="text-gray-400 text-sm mt-0.5">Max <span className="text-gray-300">5 points per bet</span>, and <span className="text-gray-300">one Match Winner bet + one Correct Score bet per game</span>. You can&apos;t stake more than your balance.</p>
+          </div>
+          <div className="px-4 py-3">
+            <p className="font-medium text-sm text-white">Payouts &amp; settlement</p>
+            <p className="text-gray-400 text-sm mt-0.5">Win and your stake returns with profit at the odds shown; lose and the stake is gone. Bets lock at kickoff and settle automatically at full time.</p>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 mt-2 px-1">
+          ⚠️ For fun only — the bookmaker&apos;s margin (the house edge) is built into the Match Winner odds. Never wager more than you can afford to lose.
+        </p>
       </section>
     </div>
   );
