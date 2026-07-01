@@ -37,9 +37,10 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // Correct Score is a fixed-payout market in this game: nail the exact final
 // scoreline and you double your stake, regardless of how likely the score was.
-export const EXACT_SCORE_PAYOUT = 2.0;
-export const MAX_STAKE = 10;          // most you can stake on a single bet
-export const MAX_BETS_PER_MATCH = 2;  // most bets one player can place on a game
+export const EXACT_SCORE_PAYOUT = 3.0; // nail the exact 90-min score → 3x stake
+export const MAX_STAKE = 5;            // most you can stake on a single bet
+// One bet per market per game: a player may place at most one Match Winner bet
+// and one Correct Score bet on the same match.
 
 function selectionLabelFor(market: BetMarket, selection: string, m: Match): string {
   if (market === "matchWinner") {
@@ -116,8 +117,9 @@ export async function placeBet(db: Firestore, uid: string, input: PlaceBetInput)
   await db.runTransaction(async (tx) => {
     // All reads before any writes.
     const [mSnap, existing] = await Promise.all([tx.get(metricsRef), tx.get(existingQuery)]);
-    if (existing.size >= MAX_BETS_PER_MATCH) {
-      throw new Error(`Max ${MAX_BETS_PER_MATCH} bets per game — you already have ${existing.size} on this match.`);
+    if (existing.docs.some((d) => (d.data().market as string) === market)) {
+      const label = market === "matchWinner" ? "match winner" : "correct score";
+      throw new Error(`You've already placed a ${label} bet on this game (1 per market).`);
     }
     const data = mSnap.exists ? mSnap.data()! : {};
     const predictionPoints = (data.totalPoints as number) ?? 0;

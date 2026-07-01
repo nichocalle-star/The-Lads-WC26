@@ -5,9 +5,8 @@ import { auth } from "@/lib/firebase";
 
 type Odds = { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
 type Mtch = { matchId: string; homeTeam: string; awayTeam: string; kickoffTimeUTC: string; round: string; odds?: Odds; bettingDisabled?: boolean };
-const EXACT_SCORE_ODDS = 2.0; // correct score pays a flat 2x
-const MAX_STAKE = 10;
-const MAX_BETS_PER_MATCH = 2;
+const EXACT_SCORE_ODDS = 3.0; // correct score pays a flat 3x
+const MAX_STAKE = 5;
 type Bet = { id: string; matchId: string; matchLabel: string; selectionLabel: string; market: string; odds: number; stake: number; expectedPayout: number; potentialProfit: number; status: string; payout: number; placedAt: string; resultScore: string | null };
 type Ctx = { predictionPoints: number; wagerBalance: number; available: number; bets: Bet[] };
 type Slip = { match: Mtch; market: "matchWinner" | "correctScore"; selection: string; label: string; odds: number };
@@ -95,7 +94,7 @@ export default function BettingSection({ uid }: { uid: string }) {
   const payout = slip ? r1(stakeNum * slip.odds) : 0;
   const profit = r1(payout - stakeNum);
   const canReview = !!slip && stakeNum > 0 && stakeNum <= cap;
-  const betsOn = (matchId: string) => (ctx?.bets.filter((b) => b.matchId === matchId).length ?? 0);
+  const hasBet = (matchId: string, market: string) => (ctx?.bets.some((b) => b.matchId === matchId && b.market === market) ?? false);
 
   function open(match: Mtch, market: "matchWinner" | "correctScore", selection: string, label: string, odds: number) {
     setSlip({ match, market, selection, label, odds });
@@ -149,8 +148,8 @@ export default function BettingSection({ uid }: { uid: string }) {
       {/* How it works */}
       <div className="px-5 pb-2 space-y-1 text-[12px] text-[#9ec9ad] leading-relaxed">
         <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the result after <span className="text-[#f0f7f2]">90 minutes + stoppage time</span> — <span className="text-[#f0f7f2]">not</span> extra time or penalties. A knockout that goes to extra time or a shootout was level at 90, so it settles as a <span className="text-[#f0f7f2]">Draw</span>.</p>
-        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact scoreline at <span className="text-[#f0f7f2]">90 minutes</span> (home team first). Nail it and you win a flat <span className="text-[#f0f7f2]">2× your stake</span>. (If a game goes to extra time the 90‑minute score can&apos;t be confirmed, so those correct‑score bets are refunded.)</p>
-        <p>Limits: <span className="text-[#f0f7f2]">max {MAX_STAKE} points per bet</span> and <span className="text-[#f0f7f2]">up to {MAX_BETS_PER_MATCH} bets per game</span> (e.g. the winner and a scoreline) — each is separate and settles on its own.</p>
+        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact scoreline at <span className="text-[#f0f7f2]">90 minutes</span> (home team first). Nail it and you win a flat <span className="text-[#f0f7f2]">3× your stake</span>. (If a game goes to extra time the 90‑minute score can&apos;t be confirmed, so those correct‑score bets are refunded.)</p>
+        <p>Limits: <span className="text-[#f0f7f2]">max {MAX_STAKE} points per bet</span>, and <span className="text-[#f0f7f2]">one outcome bet + one score bet per game</span> — each is separate and settles on its own.</p>
         <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Bets lock at kickoff and settle automatically at full-time.</p>
       </div>
 
@@ -164,25 +163,23 @@ export default function BettingSection({ uid }: { uid: string }) {
         {matches.map((m) => {
           const dh = amToDec(m.odds?.homeML), dd = amToDec(m.odds?.drawML), da = amToDec(m.odds?.awayML);
           const { h, a } = cs(m.matchId);
-          const placed = betsOn(m.matchId);
-          const full = placed >= MAX_BETS_PER_MATCH;
+          const hasWinner = hasBet(m.matchId, "matchWinner");
+          const hasScore = hasBet(m.matchId, "correctScore");
           return (
             <div key={m.matchId} className="bg-[#0e2517] border border-[#16301f] rounded-xl p-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium text-[#f0f7f2]">{m.homeTeam} <span className="text-[#6fae87]">v</span> {m.awayTeam}</p>
-                <div className="text-right">
-                  <p className="text-[10px] text-[#6fae87]">{fmtKick(m.kickoffTimeUTC)}</p>
-                  <p className={`text-[10px] ${full ? "text-[#e0b063]" : "text-[#3d6b4f]"}`}>{placed}/{MAX_BETS_PER_MATCH} bets</p>
-                </div>
+                <p className="text-[10px] text-[#6fae87]">{fmtKick(m.kickoffTimeUTC)}</p>
               </div>
 
-              {full && <p className="text-[11px] text-[#e0b063] bg-[#2a230c] rounded px-2 py-1 mb-2">You&apos;ve used both bets on this game.</p>}
-
               {/* Match Winner */}
-              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1">Match Winner <span className="text-[#3d6b4f]">· DraftKings · 90 min + stoppage (ET/pens = draw)</span></p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[10px] text-[#6fae87] uppercase tracking-wider">Match Winner <span className="text-[#3d6b4f]">· DraftKings · 90 min + stoppage (ET/pens = draw)</span></p>
+                {hasWinner && <span className="text-[10px] text-[#2bd97a]">✓ bet placed</span>}
+              </div>
               <div className="flex gap-1.5 mb-3">
                 {([["home", m.homeTeam, dh], ["draw", "Draw", dd], ["away", m.awayTeam, da]] as const).map(([sel, lbl, odd]) => (
-                  <button key={sel} disabled={!odd || full}
+                  <button key={sel} disabled={!odd || hasWinner}
                     onClick={() => open(m, "matchWinner", sel, sel === "draw" ? "Draw" : `${lbl} to win`, odd as number)}
                     className="flex-1 bg-[#10301c] enabled:hover:bg-[#164027] border border-[#1d3a28] disabled:opacity-40 rounded-lg py-1.5 text-center transition-colors">
                     <span className="block text-[11px] text-[#cfe6d8] truncate px-1">{sel === "draw" ? "Draw" : lbl}</span>
@@ -191,16 +188,19 @@ export default function BettingSection({ uid }: { uid: string }) {
                 ))}
               </div>
 
-              {/* Correct Score — stepper entry like the bracket, flat 2x */}
-              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1.5">Correct Score <span className="text-[#3d6b4f]">· score at 90 min · pays 2×</span></p>
+              {/* Correct Score — stepper entry like the bracket, flat 3x */}
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] text-[#6fae87] uppercase tracking-wider">Correct Score <span className="text-[#3d6b4f]">· score at 90 min · pays 3×</span></p>
+                {hasScore && <span className="text-[10px] text-[#2bd97a]">✓ bet placed</span>}
+              </div>
               <div className="flex items-center justify-center gap-3 bg-[#07140c] border border-[#16301f] rounded-lg py-2">
                 <Stepper label={m.homeTeam} value={h} onChange={(v) => setCs(m.matchId, v, a)} />
                 <span className="text-[#6fae87] text-lg font-bold mt-3">–</span>
                 <Stepper label={m.awayTeam} value={a} onChange={(v) => setCs(m.matchId, h, v)} />
                 <div className="ml-2 mt-3 text-center min-w-[92px]">
-                  <button disabled={full} onClick={() => open(m, "correctScore", `${h}:${a}`, `Exact score ${h}–${a}`, EXACT_SCORE_ODDS)}
+                  <button disabled={hasScore} onClick={() => open(m, "correctScore", `${h}:${a}`, `Exact score ${h}–${a}`, EXACT_SCORE_ODDS)}
                     className="bg-[#0a7a3d] enabled:hover:bg-[#0d9449] disabled:opacity-40 text-white rounded-lg px-3 py-1.5 text-[12px] font-medium">
-                    Bet {h}–{a} @ 2×
+                    Bet {h}–{a} @ 3×
                   </button>
                 </div>
               </div>
