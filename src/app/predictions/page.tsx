@@ -116,7 +116,7 @@ function formatKickoff(iso: string) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-type Tab = "picks" | "standings" | "bracket" | "browse";
+type Tab = "picks" | "standings" | "bracket" | "browse" | "audit";
 
 export default function PredictionsPage() {
   const { user, loading } = useAuth();
@@ -168,6 +168,7 @@ export default function PredictionsPage() {
     { id: "standings", label: "Predicted Standings" },
     { id: "bracket", label: "Predicted Bracket" },
     { id: "browse", label: "Other Brackets" },
+    { id: "audit", label: "🔍 Audit" },
   ];
 
   return (
@@ -201,6 +202,7 @@ export default function PredictionsPage() {
       {activeTab === "standings" && <StandingsTab groups={groups} groupMatches={groupMatches} groupStandings={groupStandings} />}
       {activeTab === "bracket" && <BracketTab groupStandings={groupStandings} thirdPlaceQualifiers={thirdPlaceQualifiers} predictions={predictions} />}
       {activeTab === "browse" && <BrowseBracketsTab matches={matches} selfUid={user!.uid} />}
+      {activeTab === "audit" && <AuditTab selfUid={user!.uid} />}
     </div>
   );
 }
@@ -691,6 +693,120 @@ function BrowseBracketsTab({ matches, selfUid }: { matches: Match[]; selfUid: st
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Audit / verify: a full scoring ledger for any player. Every prediction, the
+// actual result, points earned, and a running total that reconciles to the
+// leaderboard — so anyone can check their (or anyone's) score by hand.
+type AuditRow = {
+  matchId: string; round: string; kickoffTimeUTC: string; isKnockout: boolean;
+  predHomeTeam: string; predAwayTeam: string; predHomeScore: number | null; predAwayScore: number | null; predWinner: string;
+  actualHomeTeam: string | null; actualAwayTeam: string | null; actualHomeScore: number | null; actualAwayScore: number | null; actualWinner: string | null;
+  played: boolean; points: number; detail: string; late: boolean;
+};
+
+function AuditTab({ selfUid }: { selfUid: string }) {
+  const [players, setPlayers] = useState<{ userId: string; displayName: string; totalPoints: number }[]>([]);
+  const [selected, setSelected] = useState("");
+  const [data, setData] = useState<{ uid: string; rows: AuditRow[]; total: number; metricsTotal: number | null } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/leaderboard").then((r) => r.json()).then((j) => {
+      const list: { userId: string; displayName: string; totalPoints: number }[] = j.leaderboard ?? [];
+      setPlayers(list);
+      setSelected(list.find((p) => p.userId === selfUid)?.userId ?? list[0]?.userId ?? "");
+    }).catch(() => {});
+  }, [selfUid]);
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    fetch(`/api/audit?uid=${selected}`).then((r) => r.json())
+      .then((j) => { if (!cancelled) setData({ uid: selected, rows: j.rows ?? [], total: j.total ?? 0, metricsTotal: j.metricsTotal ?? null }); })
+      .catch(() => { if (!cancelled) setData({ uid: selected, rows: [], total: 0, metricsTotal: null }); });
+    return () => { cancelled = true; };
+  }, [selected]);
+
+  const loading = !data || data.uid !== selected;
+  const reconciles = !!data && data.metricsTotal != null && Math.abs(data.total - data.metricsTotal) < 0.05;
+  const runningTotals = (data?.rows ?? []).reduce<number[]>((arr, r) => {
+    arr.push(Math.round(((arr[arr.length - 1] ?? 0) + r.points) * 10) / 10);
+    return arr;
+  }, []);
+  const finalRunning = runningTotals.length ? runningTotals[runningTotals.length - 1] : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="text-sm text-gray-400">Audit whose points:</label>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500">
+          {players.map((p) => (
+            <option key={p.userId} value={p.userId}>{p.displayName}{p.userId === selfUid ? " (you)" : ""}</option>
+          ))}
+        </select>
+      </div>
+
+      <p className="text-xs text-gray-500">Every prediction is scored with the exact same logic as the leaderboard. Points add up top to bottom — the last row&apos;s running total is the score.</p>
+
+      {loading ? (
+        <div className="flex justify-center py-16"><div className="w-7 h-7 border-2 border-green-400 border-t-transparent rounded-full animate-spin" /></div>
+      ) : (
+        <>
+          <div className={`rounded-lg px-4 py-3 text-sm border ${reconciles ? "bg-green-900/20 border-green-800/50 text-green-300" : "bg-yellow-900/20 border-yellow-800/50 text-yellow-300"}`}>
+            {reconciles ? "✓ " : "⚠️ "}
+            Ledger adds up to <span className="font-semibold">{data.total}</span> pts
+            {data.metricsTotal != null && <> · leaderboard shows <span className="font-semibold">{data.metricsTotal}</span> {reconciles ? "— they match." : "— MISMATCH."}</>}
+          </div>
+
+          <div className="overflow-x-auto -mx-2 sm:mx-0">
+            <table className="w-full text-sm min-w-[660px]">
+              <thead>
+                <tr className="text-[10px] text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                  <td className="px-2 py-2">Round</td>
+                  <td className="px-2 py-2">Your prediction</td>
+                  <td className="px-2 py-2">Actual result</td>
+                  <td className="px-2 py-2">Why</td>
+                  <td className="px-2 py-2 text-right">Pts</td>
+                  <td className="px-2 py-2 text-right">Total</td>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((r, i) => {
+                  const running = runningTotals[i];
+                  const roundShort = r.round.replace("Round of ", "R").replace("Quarterfinal", "QF").replace("Semifinal", "SF").replace("Third Place", "3rd").replace("Group Stage", "Group").replace("Final", "Final");
+                  return (
+                    <tr key={r.matchId} className={`border-b border-gray-800/60 ${i % 2 ? "bg-gray-900/40" : ""}`}>
+                      <td className="px-2 py-2 text-gray-500 text-xs whitespace-nowrap">{roundShort}</td>
+                      <td className="px-2 py-2 text-gray-200 whitespace-nowrap">
+                        {r.predHomeTeam} <span className="text-white font-medium tabular-nums">{r.predHomeScore}–{r.predAwayScore}</span> {r.predAwayTeam}
+                        {r.isKnockout && r.predHomeScore === r.predAwayScore && <span className="text-[10px] text-gray-500"> ({r.predWinner})</span>}
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap text-gray-300">
+                        {r.played
+                          ? <>{r.actualHomeTeam} <span className="text-white tabular-nums">{r.actualHomeScore}–{r.actualAwayScore}</span> {r.actualAwayTeam}</>
+                          : <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className="px-2 py-2 text-xs text-gray-500">{r.detail}</td>
+                      <td className={`px-2 py-2 text-right font-semibold tabular-nums ${r.points > 0 ? "text-green-400" : "text-gray-600"}`}>{r.points > 0 ? `+${r.points}` : "0"}</td>
+                      <td className="px-2 py-2 text-right text-gray-300 tabular-nums">{running}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-700 font-semibold">
+                  <td className="px-2 py-2" colSpan={4}>Total · {data.rows.length} predictions</td>
+                  <td className="px-2 py-2 text-right text-green-400 tabular-nums">{data.total}</td>
+                  <td className="px-2 py-2 text-right text-white tabular-nums">{finalRunning}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

@@ -4,7 +4,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { WC2026_TOURNAMENT, isWorldCup2026 } from "./tournament";
 import { PREDICTIONS_LOCK_UTC } from "./lock";
-import { resolveChampion, buildStandings, resolveSlot, BRACKET_MAP } from "./bracket";
+import { resolveChampion, buildStandings, resolveSlot, resolveMatchTeams, BRACKET_MAP } from "./bracket";
 import type { Match, Prediction } from "./types";
 
 const ESPN_WC = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
@@ -463,4 +463,117 @@ export async function correctKnockoutWinners(db: Firestore): Promise<{ scanned: 
   }
 
   return { scanned, fixed: writes.length, sample };
+}
+
+// ── Audit: a per-prediction scoring ledger for one user ──────────────────────
+// Computed with the exact same calcPoints / buildKnockoutActuals the leaderboard
+// uses, so the running total reconciles to userMetrics. Every row shows what the
+// user predicted, what actually happened (for knockout, the real game their
+// picked team played), the points, and a plain-English reason.
+export interface AuditRow {
+  matchId: string;
+  round: string;
+  kickoffTimeUTC: string;
+  isKnockout: boolean;
+  predHomeTeam: string;
+  predAwayTeam: string;
+  predHomeScore: number | null;
+  predAwayScore: number | null;
+  predWinner: string;
+  actualHomeTeam: string | null;
+  actualAwayTeam: string | null;
+  actualHomeScore: number | null;
+  actualAwayScore: number | null;
+  actualWinner: string | null;
+  played: boolean;
+  points: number;
+  detail: string;
+  late: boolean;
+}
+
+export async function auditUser(
+  db: Firestore,
+  uid: string
+): Promise<{ rows: AuditRow[]; total: number; metricsTotal: number | null }> {
+  const [matchSnap, predSnap, metricsSnap] = await Promise.all([
+    db.collection("matches").get(),
+    db.collection("predictions").where("userId", "==", uid).get(),
+    db.collection("userMetrics").doc(uid).get(),
+  ]);
+
+  const allMatches = matchSnap.docs.map((d) => d.data() as Match).filter((m) => isWorldCup2026(m));
+  const matchById: Record<string, Match> = {};
+  for (const m of allMatches) matchById[m.matchId] = m;
+  const finals = allMatches.filter((m) => m.status === "final" && m.homeScore != null && m.awayScore != null);
+  const koActual = buildKnockoutActuals(finals);
+
+  const preds: Record<string, Prediction> = {};
+  for (const d of predSnap.docs) { const p = d.data() as Prediction; preds[p.matchId] = p; }
+  const { standings, thirdPlace } = buildStandings(allMatches, preds);
+  const deadlineMs = new Date(PREDICTIONS_LOCK_UTC).getTime();
+
+  const rows: AuditRow[] = [];
+  let total = 0;
+
+  for (const p of Object.values(preds)) {
+    const match = matchById[p.matchId];
+    if (!match) continue;
+    const isKnockout = !!BRACKET_MAP[p.matchId];
+
+    // What they predicted (their own bracket teams for knockout).
+    let predHomeTeam = match.homeTeam;
+    let predAwayTeam = match.awayTeam;
+    if (isKnockout) {
+      const r = resolveMatchTeams(match, standings, thirdPlace, preds);
+      predHomeTeam = r.home;
+      predAwayTeam = r.away;
+    }
+
+    // The actual game that decides this pick's points.
+    let actualHomeTeam: string | null = null, actualAwayTeam: string | null = null;
+    let actualHomeScore: number | null = null, actualAwayScore: number | null = null;
+    let actualWinner: string | null = null, played = false;
+    if (isKnockout) {
+      const g = finals.find((m) => m.round === match.round && (m.homeTeam === p.predictedWinner || m.awayTeam === p.predictedWinner));
+      if (g) { actualHomeTeam = g.homeTeam; actualAwayTeam = g.awayTeam; actualHomeScore = g.homeScore; actualAwayScore = g.awayScore; actualWinner = g.winner ?? null; played = true; }
+    } else if (match.status === "final" && match.homeScore != null) {
+      actualHomeTeam = match.homeTeam; actualAwayTeam = match.awayTeam; actualHomeScore = match.homeScore; actualAwayScore = match.awayScore; actualWinner = match.winner ?? null; played = true;
+    }
+
+    const raw = calcPoints(match, p, koActual);
+    const late = !!p.submittedAt && new Date(p.submittedAt).getTime() > deadlineMs;
+    const points = late && raw > 0 ? Math.round(raw * LATE_SUBMISSION_MULTIPLIER * 10) / 10 : raw;
+
+    const pts = ROUND_PTS[match.round];
+    let detail: string;
+    if (!pts) {
+      detail = "—";
+    } else if (!isKnockout) {
+      if (!played) detail = "Not played yet";
+      else if (raw >= 2) detail = "Exact score";
+      else if (raw >= 1) detail = "Correct result";
+      else detail = "Missed";
+    } else if (!isResolvedTeam(p.predictedWinner)) {
+      detail = p.predictedWinner === "draw" ? "Predicted a draw — no advance" : "Ambiguous pick — no credit";
+    } else if (!played) {
+      detail = finals.some((m) => m.round === match.round) ? `${p.predictedWinner} didn't reach ${match.round}` : "Round not played yet";
+    } else if (actualWinner !== p.predictedWinner) {
+      detail = `${p.predictedWinner} lost`;
+    } else {
+      detail = raw >= pts.advance + pts.exact ? "Advanced + exact score" : "Advanced (score off)";
+    }
+    if (late && raw > 0) detail += " · late −90%";
+
+    rows.push({
+      matchId: p.matchId, round: match.round, kickoffTimeUTC: match.kickoffTimeUTC, isKnockout,
+      predHomeTeam, predAwayTeam, predHomeScore: p.predictedHomeScore, predAwayScore: p.predictedAwayScore, predWinner: p.predictedWinner,
+      actualHomeTeam, actualAwayTeam, actualHomeScore, actualAwayScore, actualWinner, played,
+      points, detail, late,
+    });
+    total += points;
+  }
+
+  rows.sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime());
+  const metricsTotal = metricsSnap.exists ? ((metricsSnap.data()!.totalPoints as number) ?? 0) : null;
+  return { rows, total: Math.round(total * 10) / 10, metricsTotal };
 }
