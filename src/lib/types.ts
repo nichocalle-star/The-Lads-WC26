@@ -14,6 +14,13 @@ export interface Match {
   awayScore: number | null;
   winner: string | null;
   sofascoreId?: number;
+  apiFootballId?: number; // API-Football fixture id, for betting odds
+  wagerOdds?: {
+    updatedAt: string;
+    bookmaker: string | null;
+    matchWinner: { home: number | null; draw: number | null; away: number | null };
+    exactScore: { score: string; odd: number }[];
+  };
   tournament?: string; // WC2026_TOURNAMENT for World Cup 2026 matches (see lib/tournament)
   odds?: { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
 }
