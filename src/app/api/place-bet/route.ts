@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Could not place bet.";
     // Validation failures are the user's fault (400); everything else is 500.
-    const status = /stake|points|closed|odds|not found|market|max|bets per game/i.test(message) ? 400 : 500;
+    const status = /stake|points|closed|odds|not found|market|max|bets per game|open/i.test(message) ? 400 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

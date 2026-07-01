@@ -172,8 +172,8 @@ export default function RulesPage() {
             <p className="text-gray-400 text-sm mt-0.5">Max <span className="text-gray-300">5 points per bet</span>, and <span className="text-gray-300">one Match Winner bet + one Correct Score bet per game</span>. You can&apos;t stake more than your balance.</p>
           </div>
           <div className="px-4 py-3">
-            <p className="font-medium text-sm text-white">Payouts &amp; settlement</p>
-            <p className="text-gray-400 text-sm mt-0.5">Win and your stake returns with profit at the odds shown; lose and the stake is gone. Bets lock at kickoff and settle automatically at full time.</p>
+            <p className="font-medium text-sm text-white">When you can bet &amp; payouts</p>
+            <p className="text-gray-400 text-sm mt-0.5">Betting opens <span className="text-gray-300">24 hours before kickoff</span> and locks when the match starts. Win and your stake returns with profit at the odds shown; lose and the stake is gone. Bets settle automatically at full time.</p>
           </div>
         </div>
         <p className="text-xs text-gray-500 mt-2 px-1">

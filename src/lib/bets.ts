@@ -39,6 +39,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 // scoreline and you double your stake, regardless of how likely the score was.
 export const EXACT_SCORE_PAYOUT = 3.0; // nail the exact 90-min score → 3x stake
 export const MAX_STAKE = 5;            // most you can stake on a single bet
+export const BET_WINDOW_HOURS = 24;    // bets open this many hours before kickoff
 // One bet per market per game: a player may place at most one Match Winner bet
 // and one Correct Score bet on the same match.
 
@@ -92,8 +93,12 @@ export async function placeBet(db: Firestore, uid: string, input: PlaceBetInput)
   const match = matchSnap.data() as Match;
 
   if (match.bettingDisabled) throw new Error("Betting is closed for this match.");
-  if (match.status !== "upcoming" || new Date(match.kickoffTimeUTC).getTime() <= Date.now()) {
+  const kickoffMs = new Date(match.kickoffTimeUTC).getTime();
+  if (match.status !== "upcoming" || kickoffMs <= Date.now()) {
     throw new Error("Betting is closed for this match (it has started or finished).");
+  }
+  if (kickoffMs > Date.now() + BET_WINDOW_HOURS * 60 * 60 * 1000) {
+    throw new Error(`Betting isn't open yet — it opens ${BET_WINDOW_HOURS} hours before kickoff.`);
   }
   const odds = oddsForSelection(match, market, selection);
   if (!odds) throw new Error("Those odds aren't available for this match.");

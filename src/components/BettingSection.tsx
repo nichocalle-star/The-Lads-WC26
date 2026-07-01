@@ -76,8 +76,12 @@ export default function BettingSection({ uid }: { uid: string }) {
     fetch("/api/sync-matches").then((r) => r.json()).then((j) => {
       if (cancelled) return;
       const now = Date.now();
+      const windowEnd = now + 24 * 60 * 60 * 1000; // bets open 24h before kickoff
       const upcoming = ((j.matches ?? []) as Mtch[])
-        .filter((m) => m.odds && m.odds.homeML != null && !m.bettingDisabled && new Date(m.kickoffTimeUTC).getTime() > now)
+        .filter((m) => {
+          const k = new Date(m.kickoffTimeUTC).getTime();
+          return m.odds && m.odds.homeML != null && !m.bettingDisabled && k > now && k <= windowEnd;
+        })
         .sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime());
       setMatches(upcoming);
       setOpenBook(upcoming[0]?.matchId ?? null); // show the next game's book by default
@@ -150,7 +154,7 @@ export default function BettingSection({ uid }: { uid: string }) {
         <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the result after <span className="text-[#f0f7f2]">90 minutes + stoppage time</span> — <span className="text-[#f0f7f2]">not</span> extra time or penalties. A knockout that goes to extra time or a shootout was level at 90, so it settles as a <span className="text-[#f0f7f2]">Draw</span>.</p>
         <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact scoreline at <span className="text-[#f0f7f2]">90 minutes</span> (home team first). Nail it and you win a flat <span className="text-[#f0f7f2]">3× your stake</span>. (If a game goes to extra time the 90‑minute score can&apos;t be confirmed, so those correct‑score bets are refunded.)</p>
         <p>Limits: <span className="text-[#f0f7f2]">max {MAX_STAKE} points per bet</span>, and <span className="text-[#f0f7f2]">one outcome bet + one score bet per game</span> — each is separate and settles on its own.</p>
-        <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Bets lock at kickoff and settle automatically at full-time.</p>
+        <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Betting <span className="text-[#f0f7f2]">opens 24 hours before kickoff</span>, locks at kickoff, and settles automatically at full-time.</p>
       </div>
 
       {result && (
@@ -159,7 +163,7 @@ export default function BettingSection({ uid }: { uid: string }) {
 
       {/* Markets */}
       <div className="px-5 py-2 space-y-3">
-        {matches.length === 0 && <p className="text-[13px] text-[#6fae87] py-3 text-center">No upcoming matches with odds right now.</p>}
+        {matches.length === 0 && <p className="text-[13px] text-[#6fae87] py-3 text-center">No matches open for betting right now — bets open 24 hours before kickoff.</p>}
         {matches.map((m) => {
           const dh = amToDec(m.odds?.homeML), dd = amToDec(m.odds?.drawML), da = amToDec(m.odds?.awayML);
           const { h, a } = cs(m.matchId);
