@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { auth } from "@/lib/firebase";
 
 type Odds = { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
-type Mtch = { matchId: string; homeTeam: string; awayTeam: string; kickoffTimeUTC: string; round: string; odds?: Odds };
+type Mtch = { matchId: string; homeTeam: string; awayTeam: string; kickoffTimeUTC: string; round: string; odds?: Odds; bettingDisabled?: boolean };
 const EXACT_SCORE_ODDS = 2.0; // correct score pays a flat 2x
 const MAX_STAKE = 10;
 const MAX_BETS_PER_MATCH = 2;
@@ -78,7 +78,7 @@ export default function BettingSection({ uid }: { uid: string }) {
       if (cancelled) return;
       const now = Date.now();
       const upcoming = ((j.matches ?? []) as Mtch[])
-        .filter((m) => m.odds && m.odds.homeML != null && new Date(m.kickoffTimeUTC).getTime() > now)
+        .filter((m) => m.odds && m.odds.homeML != null && !m.bettingDisabled && new Date(m.kickoffTimeUTC).getTime() > now)
         .sort((a, b) => new Date(a.kickoffTimeUTC).getTime() - new Date(b.kickoffTimeUTC).getTime());
       setMatches(upcoming);
       setOpenBook(upcoming[0]?.matchId ?? null); // show the next game's book by default
@@ -229,8 +229,8 @@ export default function BettingSection({ uid }: { uid: string }) {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="tabular-nums text-[#cfe6d8]">{b.stake} → {b.expectedPayout}</p>
-                  <p className={`text-[10px] font-semibold ${b.status === "won" ? "text-[#2bd97a]" : b.status === "lost" ? "text-red-400" : "text-[#e0b063]"}`}>
-                    {b.status === "pending" ? "PENDING" : b.status === "won" ? `WON +${r1(b.payout - b.stake)}` : `LOST −${b.stake}`}
+                  <p className={`text-[10px] font-semibold ${b.status === "won" ? "text-[#2bd97a]" : b.status === "lost" ? "text-red-400" : b.status === "void" ? "text-[#6fae87]" : "text-[#e0b063]"}`}>
+                    {b.status === "pending" ? "PENDING" : b.status === "won" ? `WON +${r1(b.payout - b.stake)}` : b.status === "void" ? "VOID · refunded" : `LOST −${b.stake}`}
                   </p>
                 </div>
               </div>

@@ -90,6 +90,7 @@ export async function placeBet(db: Firestore, uid: string, input: PlaceBetInput)
   if (!matchSnap.exists) throw new Error("Match not found.");
   const match = matchSnap.data() as Match;
 
+  if (match.bettingDisabled) throw new Error("Betting is closed for this match.");
   if (match.status !== "upcoming" || new Date(match.kickoffTimeUTC).getTime() <= Date.now()) {
     throw new Error("Betting is closed for this match (it has started or finished).");
   }
