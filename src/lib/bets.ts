@@ -164,6 +164,36 @@ export async function settleBetsCore(db: Firestore): Promise<{ settled: number; 
   return { settled, won, paidOut };
 }
 
+// Public book for one match: who bet what, the stake, and the payout. Used for
+// the "who's betting on this game" view. Sorted by stake (biggest first).
+export async function getMatchBets(db: Firestore, matchId: string): Promise<{
+  matchLabel: string | null;
+  bets: { username: string; selectionLabel: string; market: BetMarket; odds: number; stake: number; expectedPayout: number; status: BetStatus }[];
+  totalStaked: number;
+}> {
+  const betsSnap = await db.collection("bets").where("matchId", "==", matchId).get();
+  if (betsSnap.empty) return { matchLabel: null, bets: [], totalStaked: 0 };
+
+  const usersSnap = await db.collection("users").get();
+  const nameByUid: Record<string, string> = {};
+  for (const d of usersSnap.docs) { const u = d.data(); if (u.username) nameByUid[d.id] = u.username as string; }
+
+  let matchLabel: string | null = null;
+  let totalStaked = 0;
+  const bets = betsSnap.docs.map((d) => {
+    const b = d.data() as Bet;
+    matchLabel = b.matchLabel;
+    totalStaked = round1(totalStaked + b.stake);
+    return {
+      username: nameByUid[b.userId] ?? "someone",
+      selectionLabel: b.selectionLabel, market: b.market, odds: b.odds,
+      stake: b.stake, expectedPayout: b.expectedPayout, status: b.status,
+    };
+  }).sort((a, b) => b.stake - a.stake);
+
+  return { matchLabel, bets, totalStaked };
+}
+
 // Everything the betting UI needs for one user: balance breakdown + their bets.
 export async function getBettingContext(db: Firestore, uid: string): Promise<{
   predictionPoints: number; wagerBalance: number; available: number; bets: Bet[];
