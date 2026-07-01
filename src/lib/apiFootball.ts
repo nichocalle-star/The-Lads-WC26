@@ -95,8 +95,20 @@ const REFRESH_MS = 3 * 60 * 60 * 1000; // odds update ~every 3h upstream
 // Map our upcoming matches to API-Football fixtures (by date + both teams) and
 // store Match Winner + Exact Score odds on each. Only touches upcoming matches
 // with real (resolved) teams, and skips any refreshed within the last 3h.
-export async function syncOddsCore(db: Firestore): Promise<{ mapped: number; oddsUpdated: number; unmatched: string[]; requests: number }> {
+export async function syncOddsCore(db: Firestore, opts: { force?: boolean } = {}): Promise<{ skipped?: boolean; mapped: number; oddsUpdated: number; unmatched: string[]; requests: number }> {
   if (!AF_KEY) throw new Error("API_FOOTBALL_KEY not set");
+
+  // Global throttle: this piggybacks on the (frequent, user-triggered) score
+  // refresh, but only actually calls API-Football at most once per REFRESH_MS so
+  // it can't burn the 100/day free-tier budget. Admin/manual runs pass force.
+  const stateRef = db.collection("metadata").doc("oddsSyncState");
+  if (!opts.force) {
+    const st = await stateRef.get();
+    const last = st.exists ? new Date((st.data()?.lastRunAt as string) ?? 0).getTime() : 0;
+    if (Date.now() - last < REFRESH_MS) {
+      return { skipped: true, mapped: 0, oddsUpdated: 0, unmatched: [], requests: 0 };
+    }
+  }
 
   const snap = await db.collection("matches").get();
   const now = Date.now();
@@ -145,5 +157,6 @@ export async function syncOddsCore(db: Firestore): Promise<{ mapped: number; odd
     }
   }
 
+  await stateRef.set({ lastRunAt: new Date().toISOString(), mapped, oddsUpdated, requests });
   return { mapped, oddsUpdated, unmatched, requests };
 }
