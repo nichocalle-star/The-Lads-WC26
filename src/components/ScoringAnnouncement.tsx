@@ -103,6 +103,7 @@ function FeedbackPrank() {
 
 export default function ScoringAnnouncement({ uid, initialAckAt }: { uid: string; initialAckAt?: string }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [ackAt, setAckAt] = useState<string | null>(initialAckAt ?? null);
   const [acking, setAcking] = useState(false);
 
@@ -137,6 +138,21 @@ export default function ScoringAnnouncement({ uid, initialAckAt }: { uid: string
         <span className="text-[10px] tracking-wider text-[#06230f] bg-[#2bd97a] rounded px-2 py-[3px] shrink-0">NEW</span>
       </div>
 
+      {!expanded && (
+        <div className="flex items-center gap-4 px-[18px] pb-3 pt-1">
+          <button onClick={() => setExpanded(true)}
+            className="text-[12px] text-[#2bd97a] hover:text-white font-medium border border-[#1d3a28] hover:border-[#2a5c3d] rounded-lg px-3 py-1.5 transition-colors">
+            Read more ▼
+          </button>
+          {ackAt ? (
+            <span className="text-[11px] text-[#2bd97a]">✓ Acknowledged</span>
+          ) : (
+            <button onClick={() => setCollapsed(true)} className="text-[11px] text-[#3d6b4f] hover:text-[#6fae87]">Dismiss</button>
+          )}
+        </div>
+      )}
+
+      {expanded && (<>
       {/* Round of 32 tiers */}
       <div className="px-[18px] pt-2.5 pb-1">
         <p className="text-[11px] tracking-[1.5px] text-[#7fd4a3] mb-2">ROUND OF 32 · UP TO 10 POINTS PER MATCH</p>
@@ -199,12 +215,19 @@ export default function ScoringAnnouncement({ uid, initialAckAt }: { uid: string
 
       <FeedbackPrank />
 
-      {ackAt && (
-        <button onClick={() => setCollapsed(true)}
-          className="w-full text-[11px] text-[#3d6b4f] hover:text-[#6fae87] py-2 border-t border-[#16301f]">
-          Hide this notice
+      <div className="flex border-t border-[#16301f]">
+        <button onClick={() => setExpanded(false)}
+          className="flex-1 text-[11px] text-[#6fae87] hover:text-white py-2 transition-colors">
+          Show less ▲
         </button>
-      )}
+        {ackAt && (
+          <button onClick={() => setCollapsed(true)}
+            className="flex-1 text-[11px] text-[#3d6b4f] hover:text-[#6fae87] py-2 border-l border-[#16301f]">
+            Hide this notice
+          </button>
+        )}
+      </div>
+      </>)}
     </div>
   );
 }
