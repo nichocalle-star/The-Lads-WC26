@@ -76,7 +76,17 @@ export async function syncMatchesCore(db: Firestore): Promise<{ synced: number }
 
     const homeTeam = home.team?.displayName ?? "TBD";
     const awayTeam = away.team?.displayName ?? "TBD";
-    const status = mapStatus(event.status?.type?.name ?? "");
+    const espnStatus = event.status?.type?.name ?? "";
+    const status = mapStatus(espnStatus);
+
+    // How a final game was decided — used to settle 90-minute betting markets:
+    // a game that reaches extra time or penalties was, by definition, level at
+    // 90 minutes, so its Match Winner settles as a Draw.
+    let decidedIn: "regulation" | "extra_time" | "penalties" | null = null;
+    if (status === "final") {
+      const s = (espnStatus + " " + (event.status?.type?.detail ?? event.status?.type?.description ?? "")).toUpperCase();
+      decidedIn = /PEN|SHOOTOUT/.test(s) ? "penalties" : /AET|EXTRA|OVERTIME/.test(s) ? "extra_time" : "regulation";
+    }
 
     const homeScore = status !== "upcoming" ? parseInt(home.score ?? "0") : null;
     const awayScore = status !== "upcoming" ? parseInt(away.score ?? "0") : null;
@@ -122,6 +132,7 @@ export async function syncMatchesCore(db: Firestore): Promise<{ synced: number }
       homeScore,
       awayScore,
       winner,
+      decidedIn,
       odds,
       updatedAt: new Date().toISOString(),
     };

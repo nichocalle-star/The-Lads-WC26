@@ -148,8 +148,8 @@ export default function BettingSection({ uid }: { uid: string }) {
 
       {/* How it works */}
       <div className="px-5 pb-2 space-y-1 text-[12px] text-[#9ec9ad] leading-relaxed">
-        <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the <span className="text-[#f0f7f2]">final score including extra time</span>; a game decided on penalties counts as a <span className="text-[#f0f7f2]">Draw</span>.</p>
-        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact final scoreline (home team first, extra time included). Nail it and you win a flat <span className="text-[#f0f7f2]">2× your stake</span>, whatever the score.</p>
+        <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the result after <span className="text-[#f0f7f2]">90 minutes + stoppage time</span> — <span className="text-[#f0f7f2]">not</span> extra time or penalties. A knockout that goes to extra time or a shootout was level at 90, so it settles as a <span className="text-[#f0f7f2]">Draw</span>.</p>
+        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact scoreline at <span className="text-[#f0f7f2]">90 minutes</span> (home team first). Nail it and you win a flat <span className="text-[#f0f7f2]">2× your stake</span>. (If a game goes to extra time the 90‑minute score can&apos;t be confirmed, so those correct‑score bets are refunded.)</p>
         <p>Limits: <span className="text-[#f0f7f2]">max {MAX_STAKE} points per bet</span> and <span className="text-[#f0f7f2]">up to {MAX_BETS_PER_MATCH} bets per game</span> (e.g. the winner and a scoreline) — each is separate and settles on its own.</p>
         <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Bets lock at kickoff and settle automatically at full-time.</p>
       </div>
@@ -179,7 +179,7 @@ export default function BettingSection({ uid }: { uid: string }) {
               {full && <p className="text-[11px] text-[#e0b063] bg-[#2a230c] rounded px-2 py-1 mb-2">You&apos;ve used both bets on this game.</p>}
 
               {/* Match Winner */}
-              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1">Match Winner <span className="text-[#3d6b4f]">· DraftKings · incl. extra time, pens = draw</span></p>
+              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1">Match Winner <span className="text-[#3d6b4f]">· DraftKings · 90 min + stoppage (ET/pens = draw)</span></p>
               <div className="flex gap-1.5 mb-3">
                 {([["home", m.homeTeam, dh], ["draw", "Draw", dd], ["away", m.awayTeam, da]] as const).map(([sel, lbl, odd]) => (
                   <button key={sel} disabled={!odd || full}
@@ -192,7 +192,7 @@ export default function BettingSection({ uid }: { uid: string }) {
               </div>
 
               {/* Correct Score — stepper entry like the bracket, flat 2x */}
-              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1.5">Correct Score <span className="text-[#3d6b4f]">· pays 2× if you nail it</span></p>
+              <p className="text-[10px] text-[#6fae87] uppercase tracking-wider mb-1.5">Correct Score <span className="text-[#3d6b4f]">· score at 90 min · pays 2×</span></p>
               <div className="flex items-center justify-center gap-3 bg-[#07140c] border border-[#16301f] rounded-lg py-2">
                 <Stepper label={m.homeTeam} value={h} onChange={(v) => setCs(m.matchId, v, a)} />
                 <span className="text-[#6fae87] text-lg font-bold mt-3">–</span>

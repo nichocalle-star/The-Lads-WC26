@@ -13,6 +13,7 @@ export interface Match {
   homeScore: number | null;
   awayScore: number | null;
   winner: string | null;
+  decidedIn?: "regulation" | "extra_time" | "penalties" | null; // how a final game ended (for 90-min bet settlement)
   sofascoreId?: number;
   bettingDisabled?: boolean; // hide this match from the Points Exchange
   tournament?: string; // WC2026_TOURNAMENT for World Cup 2026 matches (see lib/tournament)
