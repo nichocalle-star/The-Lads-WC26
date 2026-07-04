@@ -38,7 +38,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 // Correct Score is a fixed-payout market in this game: nail the exact final
 // scoreline and you double your stake, regardless of how likely the score was.
 export const EXACT_SCORE_PAYOUT = 3.0; // nail the exact 90-min score → 3x stake
-export const MAX_STAKE = 5;            // most you can stake on a single bet
+export const MAX_STAKE = 10;           // most you can stake on a single bet
 export const BET_WINDOW_HOURS = 24;    // bets open this many hours before kickoff
 // One bet per market per game: a player may place at most one Match Winner bet
 // and one Correct Score bet on the same match.

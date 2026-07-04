@@ -6,7 +6,7 @@ import { auth } from "@/lib/firebase";
 type Odds = { homeML: number | null; drawML: number | null; awayML: number | null; overUnder: number | null };
 type Mtch = { matchId: string; homeTeam: string; awayTeam: string; kickoffTimeUTC: string; round: string; odds?: Odds; bettingDisabled?: boolean };
 const EXACT_SCORE_ODDS = 3.0; // correct score pays a flat 3x
-const MAX_STAKE = 5;
+const MAX_STAKE = 10;
 type Bet = { id: string; matchId: string; matchLabel: string; selectionLabel: string; market: string; odds: number; stake: number; expectedPayout: number; potentialProfit: number; status: string; payout: number; placedAt: string; resultScore: string | null };
 type Ctx = { predictionPoints: number; wagerBalance: number; available: number; bets: Bet[] };
 type Slip = { match: Mtch; market: "matchWinner" | "correctScore"; selection: string; label: string; odds: number };
