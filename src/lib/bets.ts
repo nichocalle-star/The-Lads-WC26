@@ -163,32 +163,23 @@ export async function settleBetsCore(db: Firestore): Promise<{ settled: number; 
     const m = matchById[bet.matchId];
     if (!m || m.status !== "final" || m.homeScore == null || m.awayScore == null) continue;
 
-    // Bets settle on the 90-minute result. A game that went to extra time or
-    // penalties was level at 90, so Match Winner settles as a Draw. For Correct
-    // Score on an extra-time game we can't recover the 90-min scoreline (ESPN
-    // only gives the final), so those bets are voided and the stake refunded.
+    // Match Winner settles on the 90-minute result: a game that went to extra
+    // time or penalties was level at 90, so it settles as a Draw. Correct Score
+    // settles on the exact final score — nail it or lose the stake (no refunds).
     const decidedIn = m.decidedIn ?? "regulation";
     const wentPast90 = decidedIn === "extra_time" || decidedIn === "penalties";
 
-    let statusOut: BetStatus;
-    let payout = 0;
-    let credit = 0; // points added back to the user's balance
-    if (bet.market === "correctScore" && decidedIn === "extra_time") {
-      statusOut = "void";
-      credit = bet.stake; // refund
+    let isWin: boolean;
+    if (bet.market === "matchWinner") {
+      const reg = wentPast90 ? "draw" : m.homeScore > m.awayScore ? "home" : m.awayScore > m.homeScore ? "away" : "draw";
+      isWin = bet.selection === reg;
     } else {
-      let isWin: boolean;
-      if (bet.market === "matchWinner") {
-        const reg = wentPast90 ? "draw" : m.homeScore > m.awayScore ? "home" : m.awayScore > m.homeScore ? "away" : "draw";
-        isWin = bet.selection === reg;
-      } else {
-        isWin = bet.selection === `${m.homeScore}:${m.awayScore}`;
-      }
-      statusOut = isWin ? "won" : "lost";
-      payout = isWin ? round1(bet.stake * bet.odds) : 0;
-      credit = payout;
-      if (isWin) { won++; paidOut = round1(paidOut + payout); }
+      isWin = bet.selection === `${m.homeScore}:${m.awayScore}`;
     }
+    const statusOut: BetStatus = isWin ? "won" : "lost";
+    const payout = isWin ? round1(bet.stake * bet.odds) : 0;
+    const credit = payout; // points added back to the user's balance
+    if (isWin) { won++; paidOut = round1(paidOut + payout); }
     updates.push({ ref: d.ref, data: { status: statusOut, payout, settledAt: new Date().toISOString(), resultScore: `${m.homeScore}:${m.awayScore}` } });
     settled++;
     if (credit > 0) payoutByUser[bet.userId] = round1((payoutByUser[bet.userId] ?? 0) + credit);

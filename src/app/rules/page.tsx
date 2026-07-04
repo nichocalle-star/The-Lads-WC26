@@ -165,7 +165,7 @@ export default function RulesPage() {
           </div>
           <div className="px-4 py-3">
             <p className="font-medium text-sm text-white">Correct Score — flat 3×</p>
-            <p className="text-gray-400 text-sm mt-0.5">Pick the exact scoreline at <span className="text-gray-300">90 minutes</span>. Nail it and you win <span className="text-gray-300">3× your stake</span>. If a game goes to extra time the 90-minute score can&apos;t be confirmed, so those bets are refunded.</p>
+            <p className="text-gray-400 text-sm mt-0.5">Pick the exact <span className="text-gray-300">final scoreline</span>. Nail it and you win <span className="text-gray-300">3× your stake</span>; miss it and you lose your stake — no refunds.</p>
           </div>
           <div className="px-4 py-3">
             <p className="font-medium text-sm text-white">Limits</p>

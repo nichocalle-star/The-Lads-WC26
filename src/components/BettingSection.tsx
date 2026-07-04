@@ -152,7 +152,7 @@ export default function BettingSection({ uid }: { uid: string }) {
       {/* How it works */}
       <div className="px-5 pb-2 space-y-1 text-[12px] text-[#9ec9ad] leading-relaxed">
         <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the result after <span className="text-[#f0f7f2]">90 minutes + stoppage time</span> — <span className="text-[#f0f7f2]">not</span> extra time or penalties. A knockout that goes to extra time or a shootout was level at 90, so it settles as a <span className="text-[#f0f7f2]">Draw</span>.</p>
-        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact scoreline at <span className="text-[#f0f7f2]">90 minutes</span> (home team first). Nail it and you win a flat <span className="text-[#f0f7f2]">3× your stake</span>. (If a game goes to extra time the 90‑minute score can&apos;t be confirmed, so those correct‑score bets are refunded.)</p>
+        <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact <span className="text-[#f0f7f2]">final scoreline</span> (home team first). Nail it and you win a flat <span className="text-[#f0f7f2]">3× your stake</span>; miss it and you lose your stake — no refunds.</p>
         <p>Limits: <span className="text-[#f0f7f2]">max {MAX_STAKE} points per bet</span>, and <span className="text-[#f0f7f2]">one outcome bet + one score bet per game</span> — each is separate and settles on its own.</p>
         <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Betting <span className="text-[#f0f7f2]">opens 24 hours before kickoff</span>, locks at kickoff, and settles automatically at full-time.</p>
       </div>
@@ -194,7 +194,7 @@ export default function BettingSection({ uid }: { uid: string }) {
 
               {/* Correct Score — stepper entry like the bracket, flat 3x */}
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-[10px] text-[#6fae87] uppercase tracking-wider">Correct Score <span className="text-[#3d6b4f]">· score at 90 min · pays 3×</span></p>
+                <p className="text-[10px] text-[#6fae87] uppercase tracking-wider">Correct Score <span className="text-[#3d6b4f]">· exact final score · pays 3×</span></p>
                 {hasScore && <span className="text-[10px] text-[#2bd97a]">✓ bet placed</span>}
               </div>
               <div className="flex items-center justify-center gap-3 bg-[#07140c] border border-[#16301f] rounded-lg py-2">
