@@ -169,7 +169,7 @@ export default function RulesPage() {
           </div>
           <div className="px-4 py-3">
             <p className="font-medium text-sm text-white">Limits</p>
-            <p className="text-gray-400 text-sm mt-0.5"><span className="text-gray-300">One Match Winner bet + one Correct Score bet per game</span>. No cap on the stake — bet anything up to your full balance, but you can&apos;t stake more than you have.</p>
+            <p className="text-gray-400 text-sm mt-0.5"><span className="text-gray-300">One Match Winner bet + one Correct Score bet per game</span>. No cap on the stake — bet anything up to your full balance, but you can&apos;t stake more than you have. <span className="text-gray-500">(Temporary: through July 7 stakes are capped at 10 points per bet.)</span></p>
           </div>
           <div className="px-4 py-3">
             <p className="font-medium text-sm text-white">When you can bet &amp; payouts</p>

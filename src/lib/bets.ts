@@ -39,6 +39,14 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 // scoreline and you double your stake, regardless of how likely the score was.
 export const EXACT_SCORE_PAYOUT = 3.0; // nail the exact 90-min score → 3x stake
 export const BET_WINDOW_HOURS = 24;    // bets open this many hours before kickoff
+
+// Temporary stake cap: 10 points per bet through the end of July 7, 2026 (ET).
+// From July 8 onward stakes are uncapped (balance is the only limit).
+export const TEMP_CAP_UNTIL_UTC = "2026-07-08T04:00:00Z"; // midnight ET, July 7 -> 8
+export const TEMP_STAKE_CAP = 10;
+export function currentStakeCap(now: number = Date.now()): number | null {
+  return now < new Date(TEMP_CAP_UNTIL_UTC).getTime() ? TEMP_STAKE_CAP : null;
+}
 // One bet per market per game: a player may place at most one Match Winner bet
 // and one Correct Score bet on the same match.
 
@@ -84,6 +92,10 @@ export async function placeBet(db: Firestore, uid: string, input: PlaceBetInput)
   const stake = round1(Number(input.stake));
 
   if (!(stake > 0)) throw new Error("Stake must be greater than 0.");
+  const tempCap = currentStakeCap();
+  if (tempCap !== null && stake > tempCap) {
+    throw new Error(`Max stake is ${tempCap} points per bet today — the cap comes off after July 7.`);
+  }
   if (market !== "matchWinner" && market !== "correctScore") throw new Error("Unknown market.");
 
   const matchSnap = await db.collection("matches").doc(matchId).get();

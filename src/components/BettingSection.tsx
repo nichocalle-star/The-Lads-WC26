@@ -92,7 +92,9 @@ export default function BettingSection({ uid }: { uid: string }) {
   function reloadCtx() { fetch(`/api/betting?uid=${uid}`).then((r) => r.json()).then(setCtx).catch(() => {}); }
 
   const available = ctx?.available ?? 0;
-  const cap = available; // stake limited only by your balance
+  // Temporary 10-point cap through July 7 (ET); uncapped after — balance only.
+  const [tempCap] = useState<number | null>(() => Date.now() < new Date("2026-07-08T04:00:00Z").getTime() ? 10 : null);
+  const cap = tempCap !== null ? Math.min(tempCap, available) : available;
   const stakeNum = Math.max(0, r1(parseFloat(stake) || 0));
   const payout = slip ? r1(stakeNum * slip.odds) : 0;
   const profit = r1(payout - stakeNum);
@@ -152,7 +154,7 @@ export default function BettingSection({ uid }: { uid: string }) {
       <div className="px-5 pb-2 space-y-1 text-[12px] text-[#9ec9ad] leading-relaxed">
         <p><span className="text-[#f0f7f2] font-medium">Match Winner</span> — back home, draw, or away at live <span className="text-[#f0f7f2]">DraftKings</span> odds. Settles on the result after <span className="text-[#f0f7f2]">90 minutes + stoppage time</span> — <span className="text-[#f0f7f2]">not</span> extra time or penalties. A knockout that goes to extra time or a shootout was level at 90, so it settles as a <span className="text-[#f0f7f2]">Draw</span>.</p>
         <p><span className="text-[#f0f7f2] font-medium">Correct Score</span> — pick the exact <span className="text-[#f0f7f2]">final scoreline</span> (home team first). Nail it and you win a flat <span className="text-[#f0f7f2]">3× your stake</span>; miss it and you lose your stake — no refunds.</p>
-        <p>Limits: <span className="text-[#f0f7f2]">one outcome bet + one score bet per game</span> — each is separate and settles on its own. Stake anything up to your full balance.</p>
+        <p>Limits: <span className="text-[#f0f7f2]">one outcome bet + one score bet per game</span> — each is separate and settles on its own. {tempCap !== null ? <>Today stakes are capped at <span className="text-[#f0f7f2]">{tempCap} points per bet</span> — from July 8 the cap comes off and you can stake up to your full balance.</> : <>Stake anything up to your full balance.</>}</p>
         <p>Win and your stake returns with profit; lose and it&apos;s gone — it moves your <span className="text-[#f0f7f2]">leaderboard score</span>. You can&apos;t stake more than your balance. Betting <span className="text-[#f0f7f2]">opens 24 hours before kickoff</span>, locks at kickoff, and settles automatically at full-time.</p>
       </div>
 
@@ -252,7 +254,7 @@ export default function BettingSection({ uid }: { uid: string }) {
                 <p className="text-base font-semibold text-[#f0f7f2] mt-1">{slip.label}</p>
                 <p className="text-[12px] text-[#9ec9ad]">{slip.match.homeTeam} v {slip.match.awayTeam} · odds <span className="text-[#2bd97a] font-medium">{slip.odds}</span></p>
 
-                <label className="block text-[11px] text-[#6fae87] mt-3 mb-1">Stake ({available} available)</label>
+                <label className="block text-[11px] text-[#6fae87] mt-3 mb-1">Stake ({available} available{tempCap !== null ? ` · max ${tempCap} today` : ""})</label>
                 <input type="number" inputMode="decimal" min={0} max={cap} value={stake} onChange={(e) => setStake(e.target.value)}
                   placeholder="0" autoFocus
                   className="w-full bg-[#07140c] border border-[#1d3a28] rounded-lg px-3 py-2 text-white text-lg tabular-nums focus:outline-none focus:border-[#2bd97a]" />
@@ -266,7 +268,7 @@ export default function BettingSection({ uid }: { uid: string }) {
                   <div className="flex justify-between"><span className="text-[#9ec9ad]">Profit</span><span className="text-[#cfe6d8] tabular-nums">+{profit}</span></div>
                   <div className="flex justify-between"><span className="text-[#9ec9ad]">Balance if it loses</span><span className="text-[#cfe6d8] tabular-nums">{r1(available - stakeNum)}</span></div>
                 </div>
-                {stakeNum > cap && <p className="text-[12px] text-red-400 mt-1.5">Stake exceeds your balance.</p>}
+                {stakeNum > cap && <p className="text-[12px] text-red-400 mt-1.5">{stakeNum > available ? "Stake exceeds your balance." : `Max ${tempCap} points per bet today.`}</p>}
 
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => setSlip(null)} className="flex-1 border border-[#1d3a28] text-[#9ec9ad] rounded-lg py-2 text-sm">Cancel</button>
