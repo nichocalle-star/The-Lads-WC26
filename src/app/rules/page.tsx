@@ -172,6 +172,10 @@ export default function RulesPage() {
             <p className="text-gray-400 text-sm mt-0.5"><span className="text-gray-300">One Match Winner bet + one Correct Score bet per game</span>. No cap on the stake — bet anything up to your full balance, but you can&apos;t stake more than you have. <span className="text-gray-500">(Temporary: through July 7 stakes are capped at 10 points per bet.)</span></p>
           </div>
           <div className="px-4 py-3">
+            <p className="font-medium text-sm text-white">The Final is mandatory</p>
+            <p className="text-gray-400 text-sm mt-0.5">Every player <span className="text-gray-300">must place a bet on the World Cup Final</span>. The minimum stake is being decided by the open poll on the home page (25 / 50 / 75 — most votes wins). If you hold fewer points than the minimum, you go <span className="text-gray-300">all in</span>.</p>
+          </div>
+          <div className="px-4 py-3">
             <p className="font-medium text-sm text-white">When you can bet &amp; payouts</p>
             <p className="text-gray-400 text-sm mt-0.5">Betting opens <span className="text-gray-300">24 hours before kickoff</span> and locks when the match starts. Win and your stake returns with profit at the odds shown; lose and the stake is gone. Bets settle automatically at full time.</p>
           </div>

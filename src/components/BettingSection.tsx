@@ -132,8 +132,9 @@ export default function BettingSection({ uid }: { uid: string }) {
     } finally { setPlacing(false); }
   }
 
+  // Voided bets (early overtime-refund bug) are hidden but kept in the database.
   const pending = ctx?.bets.filter((b) => b.status === "pending") ?? [];
-  const settled = ctx?.bets.filter((b) => b.status !== "pending") ?? [];
+  const settled = ctx?.bets.filter((b) => b.status === "won" || b.status === "lost") ?? [];
 
   return (
     <div className="bg-[#0b1d12] border border-[#2a5c3d] rounded-2xl overflow-hidden">

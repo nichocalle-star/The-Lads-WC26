@@ -229,7 +229,8 @@ export async function getMatchBets(db: Firestore, matchId: string): Promise<{
 
   let matchLabel: string | null = null;
   let totalStaked = 0;
-  const bets = betsSnap.docs.map((d) => {
+  // Voided bets (early overtime-refund bug) are hidden but kept in Firestore.
+  const bets = betsSnap.docs.filter((d) => (d.data() as Bet).status !== "void").map((d) => {
     const b = d.data() as Bet;
     matchLabel = b.matchLabel;
     totalStaked = round1(totalStaked + b.stake);

@@ -8,7 +8,8 @@ import { db } from "@/lib/firebase";
 import { Match, Prediction } from "@/lib/types";
 import { flagOf } from "@/lib/teams";
 import { MatchCard } from "@/components/MatchCard";
-import ScoringAnnouncement from "@/components/ScoringAnnouncement";
+import FinalBetAnnouncement from "@/components/FinalBetAnnouncement";
+import BetsBoard from "@/components/BetsBoard";
 
 const TZ = "America/New_York";
 
@@ -390,24 +391,7 @@ export default function Home() {
         )}
       </div>
 
-      <ScoringAnnouncement uid={user.uid} initialAckAt={user.scoringAckAt} />
-
-      {/* Betting-is-live notice */}
-      <Link href="/gamblers-corner"
-        className="block bg-[#0b1d12] border border-[#2a5c3d] rounded-2xl overflow-hidden hover:border-[#3a7a52] transition-colors">
-        <div className="flex h-[3px]"><div className="flex-1 bg-[#0a7a3d]" /><div className="flex-1 bg-[#ffd166]" /><div className="flex-1 bg-[#c8102e]" /></div>
-        <div className="px-[18px] py-3.5 flex items-center gap-3">
-          <span className="w-[34px] h-[34px] rounded-full bg-[#10301c] flex items-center justify-center shrink-0 text-lg">🪙</span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold text-[#f0f7f2]">
-              The Points Exchange is live
-              <span className="ml-2 text-[9px] align-middle tracking-wider text-[#06230f] bg-[#2bd97a] rounded px-1.5 py-[2px]">NEW</span>
-            </p>
-            <p className="text-xs text-[#9ec9ad] mt-0.5">Bet your points on match winners &amp; exact scores at real odds. Find it in <span className="text-[#cfe6d8]">Gambler&apos;s Corner</span>.</p>
-          </div>
-          <span className="text-[#2bd97a] text-sm font-medium shrink-0">Bet now →</span>
-        </div>
-      </Link>
+      <FinalBetAnnouncement uid={user.uid} />
 
       <RefreshBar onRefreshed={loadData} />
 
@@ -421,6 +405,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      <BetsBoard />
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
         <CompetitorsCard entries={entries} highlightUid={user.uid} />
