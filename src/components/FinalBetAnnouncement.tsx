@@ -1,54 +1,8 @@
-"use client";
+import Link from "next/link";
 
-import { useEffect, useState } from "react";
-import { auth } from "@/lib/firebase";
-
-const OPTIONS = [25, 50, 75];
-
-// Rule announcement: everyone must bet on the World Cup Final. The minimum
-// stake is decided by an open multi-select poll (25 / 50 / 75 — most votes
-// wins); anyone holding less than the minimum goes all in.
-export default function FinalBetAnnouncement({ uid }: { uid: string }) {
-  const [counts, setCounts] = useState<Record<number, number>>({ 25: 0, 50: 0, 75: 0 });
-  const [voters, setVoters] = useState(0);
-  const [picked, setPicked] = useState<number[]>([]);
-  const [saved, setSaved] = useState<number[] | null>(null); // last submitted vote
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-
-  function load() {
-    fetch(`/api/final-poll?uid=${uid}`).then((r) => r.json()).then((j) => {
-      setCounts(j.counts ?? { 25: 0, 50: 0, 75: 0 });
-      setVoters(j.voters ?? 0);
-      if ((j.mine ?? []).length > 0) { setSaved(j.mine); setPicked(j.mine); }
-    }).catch(() => {});
-  }
-  useEffect(load, [uid]);
-
-  function toggle(o: number) {
-    setPicked((p) => (p.includes(o) ? p.filter((x) => x !== o) : [...p, o]));
-  }
-
-  async function vote() {
-    if (saving || picked.length === 0) return;
-    setSaving(true); setErr("");
-    try {
-      const tok = await auth.currentUser?.getIdToken();
-      const res = await fetch("/api/final-poll", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
-        body: JSON.stringify({ options: picked }),
-      });
-      const j = await res.json();
-      if (res.ok) { setSaved(picked); load(); }
-      else setErr(j.error || "Could not record vote.");
-    } catch { setErr("Network error — try again."); }
-    finally { setSaving(false); }
-  }
-
-  const changed = saved === null || [...picked].sort().join() !== [...saved].sort().join();
-  const leader = Math.max(...OPTIONS.map((o) => counts[o] ?? 0));
-
+// The final-bet minimum (poll result: 25 won). Everyone must bet at least this
+// on the World Cup Final; anyone who doesn't is docked the amount anyway.
+export default function FinalBetAnnouncement() {
   return (
     <div className="bg-[#0b1d12] border border-[#2a5c3d] rounded-2xl overflow-hidden">
       <div className="flex h-[3px]"><div className="flex-1 bg-[#0a7a3d]" /><div className="flex-1 bg-[#ffd166]" /><div className="flex-1 bg-[#c8102e]" /></div>
@@ -57,45 +11,24 @@ export default function FinalBetAnnouncement({ uid }: { uid: string }) {
         <div className="flex items-center gap-2.5">
           <span className="w-[30px] h-[30px] rounded-full bg-[#10301c] flex items-center justify-center shrink-0">📣</span>
           <div>
-            <p className="text-[15px] font-semibold text-[#f0f7f2]">New rule: everyone bets the Final</p>
-            <p className="text-xs text-[#6fae87] mt-0.5">A mandatory wager on the World Cup Final — vote on the minimum below.</p>
+            <p className="text-[15px] font-semibold text-[#f0f7f2]">Rule: everyone bets the Final</p>
+            <p className="text-xs text-[#6fae87] mt-0.5">The poll is in — the minimum is <span className="text-[#ffd166] font-medium">25 points</span>.</p>
           </div>
         </div>
-        <span className="text-[10px] tracking-wider text-[#06230f] bg-[#ffd166] rounded px-2 py-[3px] shrink-0 font-semibold">RULE CHANGE</span>
+        <span className="text-[10px] tracking-wider text-[#06230f] bg-[#ffd166] rounded px-2 py-[3px] shrink-0 font-semibold">NEW RULE</span>
       </div>
 
-      <div className="px-[18px] pt-2 pb-1 space-y-1 text-[12px] text-[#9ec9ad] leading-relaxed">
-        <p>Every player <span className="text-[#f0f7f2]">must place a bet on the Final</span>. The minimum stake will be whichever option gets the most votes in this open poll.</p>
-        <p>If you have <span className="text-[#f0f7f2]">fewer points than the minimum</span>, you go <span className="text-[#f0f7f2]">all in</span> with everything you have.</p>
+      <div className="px-[18px] pt-2 pb-3 space-y-1.5 text-[13px] text-[#cfe6d8] leading-relaxed">
+        <p>Every player <span className="text-[#f0f7f2] font-medium">must bet at least 25 points on the World Cup Final.</span></p>
+        <p className="text-[#e0b063]">⚠️ If you don&apos;t place a bet on the Final, <span className="font-medium">25 points will be deducted from your score anyway</span> — so you may as well have a shot at winning them.</p>
+        <p className="text-[#9ec9ad]">If you have fewer than 25 points, you go <span className="text-[#f0f7f2]">all in</span> with everything you&apos;ve got.</p>
       </div>
 
-      {/* Poll */}
-      <div className="px-[18px] pt-2 pb-3">
-        <p className="text-[11px] tracking-[1.5px] text-[#7fd4a3] mb-1.5">VOTE — MINIMUM BET (PICK ONE OR MORE)</p>
-        <div className="flex gap-2">
-          {OPTIONS.map((o) => {
-            const on = picked.includes(o);
-            const c = counts[o] ?? 0;
-            return (
-              <button key={o} onClick={() => toggle(o)}
-                className={`flex-1 rounded-lg py-2 border transition-colors ${on ? "bg-[#0a7a3d] border-[#2bd97a] text-white" : "bg-[#10301c] border-[#1d3a28] text-[#cfe6d8] hover:border-[#2a5c3d]"}`}>
-                <span className="block text-lg font-semibold tabular-nums">{o}</span>
-                <span className={`block text-[10px] ${on ? "text-[#c9f4da]" : "text-[#6fae87]"}`}>
-                  {c} vote{c === 1 ? "" : "s"}{c > 0 && c === leader ? " · leading" : ""}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex items-center gap-3 mt-2.5 flex-wrap">
-          <button onClick={vote} disabled={saving || picked.length === 0 || !changed}
-            className="bg-[#0a7a3d] hover:bg-[#0d9449] disabled:opacity-50 text-white font-medium text-[13px] px-4 py-1.5 rounded-lg transition-colors">
-            {saving ? "Saving…" : saved && !changed ? "✓ Vote recorded" : saved ? "Update vote" : "Submit vote"}
-          </button>
-          <span className="text-[11px] text-[#6fae87]">{voters} of the lads have voted · you can change your vote anytime</span>
-        </div>
-        {err && <p className="text-[12px] text-red-400 mt-1.5">{err}</p>}
-      </div>
+      <Link href="/gamblers-corner"
+        className="flex items-center justify-between px-[18px] py-3 border-t border-[#16301f] hover:bg-[#0e2517] transition-colors">
+        <span className="text-[13px] text-[#9ec9ad]">Betting opens 24h before kickoff (Jul 18)</span>
+        <span className="text-[#2bd97a] text-sm font-medium">Bet on the Final →</span>
+      </Link>
     </div>
   );
 }

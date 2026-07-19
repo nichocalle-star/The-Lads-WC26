@@ -173,7 +173,7 @@ export default function RulesPage() {
           </div>
           <div className="px-4 py-3">
             <p className="font-medium text-sm text-white">The Final is mandatory</p>
-            <p className="text-gray-400 text-sm mt-0.5">Every player <span className="text-gray-300">must place a bet on the World Cup Final</span>. The minimum stake is being decided by the open poll on the home page (25 / 50 / 75 — most votes wins). If you hold fewer points than the minimum, you go <span className="text-gray-300">all in</span>.</p>
+            <p className="text-gray-400 text-sm mt-0.5">Every player <span className="text-gray-300">must bet at least 25 points on the World Cup Final</span>. Don&apos;t place a bet and <span className="text-gray-300">25 points are deducted from your score anyway</span>. If you hold fewer than 25 points, you go <span className="text-gray-300">all in</span>.</p>
           </div>
           <div className="px-4 py-3">
             <p className="font-medium text-sm text-white">When you can bet &amp; payouts</p>

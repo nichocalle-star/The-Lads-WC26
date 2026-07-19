@@ -391,7 +391,7 @@ export default function Home() {
         )}
       </div>
 
-      <FinalBetAnnouncement uid={user.uid} />
+      <FinalBetAnnouncement />
 
       <RefreshBar onRefreshed={loadData} />
 
